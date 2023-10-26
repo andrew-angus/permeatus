@@ -1,4 +1,12 @@
 .ipynb_checkpoints
 __pycache__
-lab.log
+*.log
 *.ipynb
+*.rpy*
+*.rec
+*.com
+*.dat
+*.inp
+*.prt
+*.sta
+*.msg
