@@ -11,6 +11,13 @@ from job import *
 from sketch import *
 from visualization import *
 from connectorBehavior import *
+from abaqus import *
+from abaqusConstants import *
+import visualization
+import numpy as np
+import odbAccess
+import pickle
+import csv
 
 # Permeation model
 perm = mdb.Model(name='perm')
@@ -127,5 +134,41 @@ mdb.Job(atTime=None, contactPrint=OFF, description='', echoPrint=OFF,
     numCpus=1, numGPUs=0, numThreadsPerMpiProcess=1, queue=None, resultsFormat=
     ODB, scratch='', type=ANALYSIS, userSubroutine='', waitHours=0, 
     waitMinutes=0)
-#mdb.jobs['sim'].submit(datacheckJob=True)
-mdb.jobs['sim'].submit()
+mdb.jobs['sim'].submit(datacheckJob=True)
+#mdb.jobs['sim'].submit()
+
+# Open database
+sim = visualization.openOdb(path='sim.odb')
+
+# Identify diffusion step
+step = sim.steps['diffusion']
+
+# Write field report
+myViewport = session.Viewport(name='viewport',
+    origin=(10, 10), width=150, height=100)
+myViewport.setValues(displayedObject=sim)
+#dg = session.viewports['viewport'].assemblyDisplay.displayGroup
+dg = session.viewports['viewport'].odbDisplay.displayGroup
+odb = session.odbs['sim.odb']
+session.writeFieldReport(fileName='test.rpt',append=OFF,step=2,frame=4,odb=odb, \
+    outputPosition=NODAL,sortitem="Node Label",variable=(('CONC',NODAL,),),displayGroup=dg)
+
+odb.close()
+
+# Read frames for nodal concentrations
+#touts = np.array([0.001,0.05,0.2,2.0])
+#conc_field = {}
+#for i in range(len(touts)):
+#  conc_field[i] = step.frames[i].fieldOutputs['CONC'].values
+
+#with open('test.pickle', 'wb') as handle:
+#    pickle.dump(conc_field, handle)
+
+# Establish path for 1D spatial plot
+#npoints = 51
+#xrange = np.linspace(-0.5,0.5,npoints)
+#points = ((xrange[i],0.5,0.0) for i in range(npoints))
+#path = sim.Path(name='path',type=POINT_LIST,expression=points)
+
+# Create xydata
+#xy = sim.XYDataFromPath(path=path,name='tout1')
