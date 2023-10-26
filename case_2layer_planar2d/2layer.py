@@ -24,13 +24,9 @@ part = perm.Part(dimensionality=TWO_D_PLANAR, name='part', type=DEFORMABLE_BODY)
 part.BaseShell(sketch=sketch)
 
 # Partition into two distinct layers
-print(part.faces)
 part.PartitionFaceByShortestPath(faces= \
-    part.faces.getSequenceFromMask(('[#1 ]', ), ), \
-    point1=part.InterestingPoint( \
-    part.edges[0], MIDDLE), point2= \
-    part.InterestingPoint( \
-    part.edges[2], MIDDLE))
+    part.faces.findAt(((0.0,0.0,0.0), ), ), \
+    point1=(0.0,-0.5,0.0), point2=(0.0,0.5,0.0))
 
 # Define layer properties
 layer1 = perm.Material(name='layer1')
@@ -44,74 +40,72 @@ layer2.Solubility(table=((1.1, ), ))
 # Define and assign sections
 perm.HomogeneousSolidSection(material='layer1', name='layer1',thickness=None)
 perm.HomogeneousSolidSection(material='layer2', name='layer2',thickness=None)
-setlayer1 = part.Set(faces=part.faces.getSequenceFromMask(('[#2 ]', ), ), name='layer1')
+setlayer1 = part.Set(faces=part.faces.findAt(((-0.25,0.0,0.0), ), ), name='layer1')
+setlayer2 = part.Set(faces=part.faces.findAt(((0.25,0.0,0.0), ), ), name='layer2')
 part.SectionAssignment(offset=0.0, \
     offsetField='', offsetType=MIDDLE_SURFACE, region=setlayer1, sectionName='layer1', \
     thicknessAssignment=FROM_SECTION)
-setlayer2 = part.Set(faces=part.faces.getSequenceFromMask(('[#1 ]', ), ), name='layer2')
 part.SectionAssignment(offset=0.0, \
     offsetField='', offsetType=MIDDLE_SURFACE, region=setlayer2, sectionName='layer2', \
     thicknessAssignment=FROM_SECTION)
 
 # Define assembly
-perm.rootAssembly.DatumCsysByDefault(CARTESIAN)
+#perm.rootAssembly.DatumCsysByDefault(CARTESIAN)
 instance = perm.rootAssembly.Instance(dependent=OFF, name='instance', part=part)
 
-# Mesh assembly instance
-perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, 
-    constraint=FIXED, end2Edges=
-    instance.edges.getSequenceFromMask(
-    ('[#10 ]', ), ), number=40, ratio=5.0)
-perm.rootAssembly.Set(edges=
-    instance.edges.getSequenceFromMask(
-    ('[#10 ]', ), ), name='top1')
-perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, 
-    constraint=FIXED, end2Edges=
-    instance.edges.getSequenceFromMask(
-    ('[#8 ]', ), ), number=36, ratio=5.0)
-perm.rootAssembly.Set(edges=
-    instance.edges.getSequenceFromMask(
-    ('[#8 ]', ), ), name='Edge Seeds-1')
-perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, 
-    constraint=FIXED, end1Edges=
-    instance.edges.getSequenceFromMask(
-    ('[#2 ]', ), ), number=36, ratio=5.0)
-perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, 
-    constraint=FIXED, end1Edges=
-    instance.edges.getSequenceFromMask(
-    ('[#40 ]', ), ), number=40, ratio=5.0)
-perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, edges=
-    instance.edges.getSequenceFromMask(
-    ('[#20 ]', ), ), number=1)
-perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, edges=
-    instance.edges.getSequenceFromMask(
-    ('[#4 ]', ), ), number=1)
-perm.rootAssembly.generateMesh(regions=(
-    instance, ))
-perm.rootAssembly.setElementType(elemTypes=(ElemType(
-    elemCode=DC2D8, elemLibrary=STANDARD), ElemType(elemCode=DC2D6, 
-    elemLibrary=STANDARD)), regions=(
-    instance.faces.getSequenceFromMask(
-    ('[#3 ]', ), ), ))
-perm.rootAssembly.deleteMesh(regions=
-    instance.faces.getSequenceFromMask(
-    ('[#3 ]', ), ))
-perm.rootAssembly.setMeshControls(elemShape=QUAD, regions=
-    instance.faces.getSequenceFromMask(
-    ('[#3 ]', ), ), technique=STRUCTURED)
-perm.rootAssembly.generateMesh(regions=(
-    instance, ))
+# Set element types
+#face1 = perm.rootAssembly.Set(faces=instance.faces.findAt(((-0.25,0.0,0.0), ), ), name='face1')
+#face2 = perm.rootAssembly.Set(faces=instance.faces.findAt(((0.25,0.0,0.0), ), ), name='face2')
+face1 = instance.faces.findAt(((-0.25,0.0,0.0), ), )
+face2 = instance.faces.findAt(((0.25,0.0,0.0), ), )
+perm.rootAssembly.setElementType(elemTypes=(ElemType( \
+    elemCode=DC2D8, elemLibrary=STANDARD), ElemType(elemCode=DC2D6, \
+    elemLibrary=STANDARD)), regions=(face1,face2, ))
+    #elemLibrary=STANDARD)), regions=( \
+    #part.faces.findAt(((-0.25,0.0,0.0), (0.25,0.0,0.0), ), ), ))
+
+# Set mesh controls
+perm.rootAssembly.setMeshControls(elemShape=QUAD, regions=face1, \
+    technique=STRUCTURED)
+perm.rootAssembly.setMeshControls(elemShape=QUAD, regions=face2, \
+    technique=STRUCTURED)
+
+# Seed mesh and generate
+perm.rootAssembly.Set(edges= \
+    instance.edges.findAt(((-0.25,0.5,0.0), ), ), name='top1')
+perm.rootAssembly.Set(edges= \
+    instance.edges.findAt(((0.25,0.5,0.0), ), ), name='top2')
+perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, constraint=FIXED, \
+    end1Edges= instance.edges.findAt(((-0.25,0.5,0.0), ), ), \
+    number=40, ratio=5.0)
+perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, constraint=FIXED, \
+    end1Edges= instance.edges.findAt(((-0.25,-0.5,0.0), ), ), \
+    number=40, ratio=5.0)
+perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, constraint=FIXED, \
+    end1Edges= instance.edges.findAt(((0.25,0.5,0.0), ), ), \
+    number=36, ratio=5.0)
+perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, constraint=FIXED, \
+    end1Edges= instance.edges.findAt(((0.25,-0.5,0.0), ), ), \
+    number=36, ratio=5.0)
+perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, edges= \
+    instance.edges.findAt(((-0.5,0.0,0.0), ), ), number=1)
+perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, edges= \
+    instance.edges.findAt(((0.5,0.0,0.0), ), ), number=1)
+perm.rootAssembly.generateMesh(regions=(instance, ))
+
+# Mass diffusion step
+perm.MassDiffusionStep(dcmax=1.0, end=0.0, initialInc=0.00012, \
+    maxInc=0.001, minInc=0.00012, name='diffusion', previous='Initial', \
+    timePeriod=2.0, maxNumInc=100000)
 
 # Concentration BCs
-perm.rootAssembly.Set(edges=
-    instance.edges.getSequenceFromMask(
-    ('[#20 ]', ), ), name='left')
+perm.rootAssembly.Set(edges= \
+    instance.edges.findAt(((-0.5,0.0,0.0), ), ), name='left')
+perm.rootAssembly.Set(edges= \
+    instance.edges.findAt(((0.5,0.0,0.0), ), ), name='right')
 perm.ConcentrationBC(amplitude=UNSET, createStepName=
     'diffusion', distributionType=UNIFORM, fieldName='', fixed=OFF, magnitude=
     1.0, name='source', region=perm.rootAssembly.sets['left'])
-perm.rootAssembly.Set(edges=
-    instance.edges.getSequenceFromMask(
-    ('[#4 ]', ), ), name='right')
 perm.ConcentrationBC(amplitude=UNSET, createStepName=
     'diffusion', distributionType=UNIFORM, fieldName='', fixed=OFF, magnitude=
     0.0, name='sink', region=perm.rootAssembly.sets['right'])
@@ -119,15 +113,10 @@ perm.ConcentrationBC(amplitude=UNSET, createStepName=
 # Set absolute zero temperature
 perm.setValues(absoluteZero=0.0)
 
-# Mass diffusion step
-perm.MassDiffusionStep(dcmax=1.0, end=0.0, initialInc=0.00012, 
-    maxInc=0.001, minInc=0.00012, name='diffusion', previous='Initial', 
-    timePeriod=2.0, maxNumInc=100000)
-
 # Output requests at specific times
 perm.TimePoint(name='timepoints', points=((0.001, ), (0.05, 
     ), (0.2, ), (2.0, )))
-perm.fieldOutputRequests['fields'].setValues(position=
+perm.fieldOutputRequests['F-Output-1'].setValues(position=
     NODES, timePoint='timepoints', variables=('MFL', 'MFLT', 'CONC', 'NNC'))
 
 # Create and submit job
@@ -138,4 +127,5 @@ mdb.Job(atTime=None, contactPrint=OFF, description='', echoPrint=OFF,
     numCpus=1, numGPUs=0, numThreadsPerMpiProcess=1, queue=None, resultsFormat=
     ODB, scratch='', type=ANALYSIS, userSubroutine='', waitHours=0, 
     waitMinutes=0)
-mdb.jobs['sim'].submit(consistencyChecking=OFF)
+#mdb.jobs['sim'].submit(datacheckJob=True)
+mdb.jobs['sim'].submit()
