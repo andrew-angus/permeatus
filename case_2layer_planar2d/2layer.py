@@ -13,20 +13,13 @@ from visualization import *
 from connectorBehavior import *
 from abaqus import *
 from abaqusConstants import *
-import visualization
-import numpy as np
-import odbAccess
-import pickle
-import csv
-from caeModules import *
-from driverUtils import executeOnCaeStartup
+#import odbAccess
 
 # Establish viewport
 myViewport = session.Viewport(name='viewport',
     origin=(0.0, 0.0), width=679.98, height=459.45)
 session.viewports['viewport'].makeCurrent()
 session.viewports['viewport'].maximize()
-#executeOnCaeStartup()
 
 # Permeation model
 perm = mdb.Model(name='perm')
@@ -150,13 +143,16 @@ mdb.jobs['sim'].waitForCompletion()
 #mdb.jobs['sim'].submit()
 
 # Open odb
-o1 = session.openOdb(name='/home/wmg/wmsmkc/Documents/permeatus/case_2layer_planar2d/sim.odb', \
+o1 = session.openOdb(name='./sim.odb', \
     readOnly=False)
 session.viewports['viewport'].setValues(displayedObject=o1)
-odb = session.odbs['/home/wmg/wmsmkc/Documents/permeatus/case_2layer_planar2d/sim.odb']
+odb = session.odbs['./sim.odb']
 
 # Write field report to csv file
 session.fieldReportOptions.setValues(reportFormat=COMMA_SEPARATED_VALUES)
 session.writeFieldReport(fileName='check.csv', append=OFF,
     sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=NODAL,
     variable=(('CONC', ELEMENT_NODAL), ), stepFrame=ALL)
+
+# Save model
+mdb.saveAs(pathName='./model')
