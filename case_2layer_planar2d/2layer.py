@@ -18,6 +18,15 @@ import numpy as np
 import odbAccess
 import pickle
 import csv
+from caeModules import *
+from driverUtils import executeOnCaeStartup
+
+# Establish viewport
+myViewport = session.Viewport(name='viewport',
+    origin=(0.0, 0.0), width=679.98, height=459.45)
+session.viewports['viewport'].makeCurrent()
+session.viewports['viewport'].maximize()
+#executeOnCaeStartup()
 
 # Permeation model
 perm = mdb.Model(name='perm')
@@ -82,18 +91,18 @@ perm.rootAssembly.Set(edges= \
     instance.edges.findAt(((-0.25,0.5,0.0), ), ), name='top1')
 perm.rootAssembly.Set(edges= \
     instance.edges.findAt(((0.25,0.5,0.0), ), ), name='top2')
-perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, constraint=FIXED, \
-    end1Edges= instance.edges.findAt(((-0.25,0.5,0.0), ), ), \
-    number=40, ratio=5.0)
-perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, constraint=FIXED, \
-    end1Edges= instance.edges.findAt(((-0.25,-0.5,0.0), ), ), \
-    number=40, ratio=5.0)
-perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, constraint=FIXED, \
-    end1Edges= instance.edges.findAt(((0.25,0.5,0.0), ), ), \
-    number=36, ratio=5.0)
-perm.rootAssembly.seedEdgeByBias(biasMethod=SINGLE, constraint=FIXED, \
-    end1Edges= instance.edges.findAt(((0.25,-0.5,0.0), ), ), \
-    number=36, ratio=5.0)
+perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, \
+    edges= instance.edges.findAt(((-0.25,0.5,0.0), ), ), \
+    number=40)
+perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, \
+    edges= instance.edges.findAt(((-0.25,-0.5,0.0), ), ), \
+    number=40)
+perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, \
+    edges= instance.edges.findAt(((0.25,0.5,0.0), ), ), \
+    number=40)
+perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, \
+    edges= instance.edges.findAt(((0.25,-0.5,0.0), ), ), \
+    number=40)
 perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, edges= \
     instance.edges.findAt(((-0.5,0.0,0.0), ), ), number=1)
 perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, edges= \
@@ -134,41 +143,20 @@ mdb.Job(atTime=None, contactPrint=OFF, description='', echoPrint=OFF,
     numCpus=1, numGPUs=0, numThreadsPerMpiProcess=1, queue=None, resultsFormat=
     ODB, scratch='', type=ANALYSIS, userSubroutine='', waitHours=0, 
     waitMinutes=0)
-mdb.jobs['sim'].submit(datacheckJob=True)
+#mdb.jobs['sim'].submit(datacheckJob=True)
+#mdb.jobs['sim'].submit(continueJob=True)
+mdb.jobs['sim'].submit()
+mdb.jobs['sim'].waitForCompletion()
 #mdb.jobs['sim'].submit()
 
-# Open database
-sim = visualization.openOdb(path='sim.odb')
+# Open odb
+o1 = session.openOdb(name='/home/wmg/wmsmkc/Documents/permeatus/case_2layer_planar2d/sim.odb', \
+    readOnly=False)
+session.viewports['viewport'].setValues(displayedObject=o1)
+odb = session.odbs['/home/wmg/wmsmkc/Documents/permeatus/case_2layer_planar2d/sim.odb']
 
-# Identify diffusion step
-step = sim.steps['diffusion']
-
-# Write field report
-myViewport = session.Viewport(name='viewport',
-    origin=(10, 10), width=150, height=100)
-myViewport.setValues(displayedObject=sim)
-#dg = session.viewports['viewport'].assemblyDisplay.displayGroup
-dg = session.viewports['viewport'].odbDisplay.displayGroup
-odb = session.odbs['sim.odb']
-session.writeFieldReport(fileName='test.rpt',append=OFF,step=2,frame=4,odb=odb, \
-    outputPosition=NODAL,sortitem="Node Label",variable=(('CONC',NODAL,),),displayGroup=dg)
-
-odb.close()
-
-# Read frames for nodal concentrations
-#touts = np.array([0.001,0.05,0.2,2.0])
-#conc_field = {}
-#for i in range(len(touts)):
-#  conc_field[i] = step.frames[i].fieldOutputs['CONC'].values
-
-#with open('test.pickle', 'wb') as handle:
-#    pickle.dump(conc_field, handle)
-
-# Establish path for 1D spatial plot
-#npoints = 51
-#xrange = np.linspace(-0.5,0.5,npoints)
-#points = ((xrange[i],0.5,0.0) for i in range(npoints))
-#path = sim.Path(name='path',type=POINT_LIST,expression=points)
-
-# Create xydata
-#xy = sim.XYDataFromPath(path=path,name='tout1')
+# Write field report to csv file
+session.fieldReportOptions.setValues(reportFormat=COMMA_SEPARATED_VALUES)
+session.writeFieldReport(fileName='check.csv', append=OFF,
+    sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=NODAL,
+    variable=(('CONC', ELEMENT_NODAL), ), stepFrame=ALL)
