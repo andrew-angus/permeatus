@@ -53,7 +53,7 @@ plt.rc('axes',prop_cycle=nord_cycler)
 # %%
 # Read 1 layer abaqus report
 from read_report import *
-data = read_report('1layer.rpt')
+data = read_xy('1layer.rpt')
 #print(data)
 
 # %%
@@ -70,7 +70,7 @@ plt.show()
 
 # %%
 # 2 layers
-data = read_report('2layer.rpt')
+data = read_xy('2layer.rpt')
 for i in range(4):
     datx = data['X'][np.nonzero(data[f'tout{i+1}'])]+0.5
     sortargs = np.argsort(datx)
@@ -79,14 +79,43 @@ for i in range(4):
     daty = daty[sortargs]
     datx = np.r_[datx,1.0]
     daty = np.r_[daty,0.0]
-    print(datx)
-    print(daty)
     plt.plot(datx,daty,label=f'{touts[i]:0.3f} s')
 plt.xlabel('$x$ [$m$]')
 plt.ylabel(r'$\varphi$ [mol/$m^3$]')
 plt.legend()
 plt.tight_layout()
 plt.savefig('2layer_abaqus.pgf',bbox_inches='tight')
+plt.show()
+
+# %%
+# Read field output csv
+data = read_field('check.csv')
+
+# %%
+# Loop through frames
+for frame in range(1,data['frames']):
+    # Identify path along top of part
+    ymax = np.max(data[frame]['y'])
+    print(frame)
+    pathargs = np.ravel(np.argwhere(data[frame]['y'] > ymax-1e-10))
+    x = data[frame]['x'][pathargs]
+    C = data[frame]['C'][pathargs]
+
+    # Identify unique points
+    """
+    print(len(x),x)
+    x, unique = np.unique(x,return_index=True)
+    print(unique)
+    print(len(x),x)
+    C = C[unique]
+    print(C)
+    """
+    # plot
+    xsort = np.argsort(x)
+    x = x[xsort]
+    C = C[xsort]
+    plt.plot(x,C,label=f"{data[frame]['t']:0.3f} s")
+plt.legend()
 plt.show()
 
 # %%
