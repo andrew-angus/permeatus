@@ -119,3 +119,43 @@ plt.legend()
 plt.show()
 
 # %%
+from permeatus import *
+
+# %%
+perm = permeatus(layers=2,L=np.array([0.5,0.5]),D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),C0=1.0,C1=0.0)
+
+# %%
+print(perm.p0,perm.P)
+
+# %%
+perm.read_field('check.csv')
+
+# %%
+# Loop through frames
+for frame in range(1,perm.field['frames']):
+    # Identify path along top of part
+    ymax = np.max(perm.field[frame]['y'])
+    pathargs = np.ravel(np.argwhere(perm.field[frame]['y'] > ymax-1e-10))
+    x = perm.field[frame]['x'][pathargs]
+    C = perm.field[frame]['C'][pathargs]
+
+    # Identify unique points
+    """
+    print(len(x),x)
+    x, unique = np.unique(x,return_index=True)
+    print(unique)
+    print(len(x),x)
+    C = C[unique]
+    print(C)
+    """
+    # Sort by x-coordinate
+    xsort = np.argsort(x)
+    x = x[xsort]
+    C = C[xsort]
+    plt.plot(x,C,label=f"{perm.field[frame]['t']:0.3f} s")
+plt.legend()
+plt.xlabel(r'$x$ [$m$]')
+plt.ylabel(r'$C$ [mol$m^{-3}$]')
+plt.show()
+
+# %%
