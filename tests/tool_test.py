@@ -63,10 +63,16 @@ plt.rc('axes',prop_cycle=nord_cycler)
 from permeatus import *
 
 # %%
-perm = planar(layers=2,L=np.array([0.5,0.5]),D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=1,N=[40,36])
+perm = planar(layers=2,L=np.array([0.5,0.5]),D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),\
+              C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=1,N=[40,36])
+#perm = planar(layers=2,L=np.array([0.5,0.5]),P=[1.0,0.11],\
+#              p0=1.0,p1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=1,N=[40,36])
 
 # %%
-perm.read_field('./check.csv')
+perm.submit_job()
+
+# %%
+perm.read_field()
 
 # %%
 perm.plot_1d()
@@ -91,9 +97,29 @@ print(p[1])
 """
 
 # %%
+#TODO use real polymer system
+perm = planar(layers=3,L=np.array([0.4,0.3,0.3]),D=np.array([1.0,0.1,0.5]),S=np.array([1.0,1.1,0.7]),\
+              C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=1,N=[40,36,32])
+
+# %%
 perm.submit_job()
 
 # %%
-os.system('cat abaqus_script.py')
+perm.read_field()
 
 # %%
+perm.plot_1d()
+
+# %%
+xc, C, J = perm.steady_state('C',plot=True)
+
+# %%
+print(J)
+print(C[1:-1])
+
+# %%
+xc, p, J = perm.steady_state('p',plot=True)
+
+# %%
+print(J)
+print(p[1:-1])

@@ -244,10 +244,9 @@ class planar:
     # n-layer solve
     else:
       # Populate internal pressure problem arrays
-      # Incorporate boundary conditions
       b = np.zeros(self.layers-1)
-      b[0] = self.p0
-      b[-1] = self.p1
+      b[0] = self.p0*k[0]
+      b[-1] = self.p1*k[-1]
       # coefficient matrix
       a = -k[1:-1]*(np.eye(self.layers-1,k=1)+np.eye(self.layers-1,k=-1)) + \
           (k[:-1]+k[1:])*np.eye(self.layers-1)
