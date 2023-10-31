@@ -1,3 +1,5 @@
+# Author: Andrew Angus
+
 from part import *
 from material import *
 from section import *
@@ -13,7 +15,7 @@ from visualization import *
 from connectorBehavior import *
 from abaqus import *
 from abaqusConstants import *
-#import odbAccess
+import sys
 
 # Establish viewport
 myViewport = session.Viewport(name='viewport',
