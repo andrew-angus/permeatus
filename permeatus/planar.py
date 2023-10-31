@@ -249,8 +249,8 @@ class planar:
       b[0] = self.p0
       b[-1] = self.p1
       # coefficient matrix
-      a = -k[1:-1]*(np.eye(self.layers,k=1)+np.eye(self.layers,k=-1)) + \
-          (k[:-1]+k[1:])*np.eye(self.layers)
+      a = -k[1:-1]*(np.eye(self.layers-1,k=1)+np.eye(self.layers-1,k=-1)) + \
+          (k[:-1]+k[1:])*np.eye(self.layers-1)
 
       # Solve for internal pressures
       p_int = np.linalg.solve(a,b)
@@ -276,8 +276,8 @@ class planar:
       xc[2:-1:2] = x[1:-1]
       # concentrations
       C = np.zeros_like(xc)
-      C[:-1:2] = S*p[:-1]
-      C[1::2] = S*p[1:]
+      C[:-1:2] = self.S*p[:-1]
+      C[1::2] = self.S*p[1:]
 
     # Optionally plot
     if plot:
