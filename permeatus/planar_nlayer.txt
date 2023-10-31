@@ -173,7 +173,7 @@ odb = session.odbs['./sim.odb']
 
 # Write concentration field report to csv file
 session.fieldReportOptions.setValues(reportFormat=COMMA_SEPARATED_VALUES)
-session.writeFieldReport(fileName='check.csv', append=OFF,
+session.writeFieldReport(fileName='CONC.csv', append=OFF,
     sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=NODAL,
     variable=(('CONC', ELEMENT_NODAL), ), stepFrame=ALL)
 

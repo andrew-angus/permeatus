@@ -94,9 +94,19 @@ class planar:
           else:
             o.write(row)
 
+    # Remove output file to prevent appending to existing file
+    try:
+      os.system('rm CONC.csv')
+    except:
+      pass
+
+    # Submit created script
+    print('Running ABAQUS...')
+    os.system('abaqus cae noGui=abaqus_script.py')
+    print('DONE')
 
   # Read field data output to csv file from abaqus
-  def read_field(self,fname='abaqus.csv'):
+  def read_field(self,target='CONC',targetdir=None):
 
     # Initialise data dict and labels logical
     self.field = {}
@@ -104,6 +114,9 @@ class planar:
 
     # Read into dictionary with csv module
     inc = -1; incc = -1
+    fname = f'{target}.csv'
+    if targetdir is not None:
+      fname = os.path.join(targetdir,fname)
     with open(fname, newline='') as f:
       reader = csv.DictReader(f)
       for row in reader:
