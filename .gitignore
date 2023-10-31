@@ -1,5 +1,7 @@
+abaqus_script.py
 .ipynb_checkpoints
 __pycache__
+*.egg-info
 *.log
 *.ipynb
 *.rpy*

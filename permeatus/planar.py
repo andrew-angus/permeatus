@@ -1,14 +1,25 @@
 import numpy as np
 import csv
 import matplotlib.pyplot as plt
+import os
+from importlib.resources import files
+import permeatus
 
 # ABAQUS permeation class object
-class permeatus:
+class planar:
 
   # Initialisation arguments
-  def __init__(self,layers=None,L=None,D=None,S=None,P=None,\
+  def __init__(self,layers,L,touts,D=None,S=None,P=None,\
                C0=None,C1=None,p0=None,p1=None,\
-               N=None,tout=None,tstep=None,ncpu=None):
+               N=None,tstep=None,ncpu=None):
+
+    # Defaults
+    if ncpu is None:
+      ncpu = 1
+    if tstep is None:
+      tstep = 0.001
+    if C1 is None:
+      C1 = 0.0
 
     #TODO Check validity of arguments 
 
@@ -23,7 +34,7 @@ class permeatus:
     self.p0 = p0
     self.p1 = p1
     self.N = N
-    self.tout = tout
+    self.touts = touts
     self.tstep = tstep
     self.ncpu = ncpu
     self.totL = np.sum(L)
@@ -49,10 +60,40 @@ class permeatus:
       self.p1 = self.C1/self.S[-1]
 
   # Submit ABAQUS job
-  #TODO options for resource control on job
   def submit_job(self):
-    # Edit script template and run through abaqus interpreter
-    pass
+
+    # Update script template with variable inputs
+    template = files(permeatus).joinpath("planar_nlayer.txt")
+    with template.open() as i:
+      with open("abaqus_script.py","w") as o:
+
+        # Loop through template rows 
+        for row in i:
+
+          # Change desired lines
+          if  row.startswith("L = "):
+            o.write(f'L = {list(self.L)}\n')
+          elif row.startswith("D = "):
+            o.write(f'D = {list(self.D)}\n')
+          elif row.startswith("S = "):
+            o.write(f'S = {list(self.S)}\n')
+          elif row.startswith("N = "):
+            o.write(f'N = {list(self.N)}\n')
+          elif row.startswith("touts = "):
+            o.write(f'touts = {list(self.touts)}\n')
+          elif row.startswith("C0 = "):
+            o.write(f'C0 = {self.C0}\n')
+          elif row.startswith("C1 = "):
+            o.write(f'C1 = {self.C1}\n')
+          elif row.startswith("tstep = "):
+            o.write(f'tstep = {self.tstep}\n')
+          elif row.startswith("ncpu = "):
+            o.write(f'ncpu = {self.ncpu}\n')
+
+          # Write other lines unchanged
+          else:
+            o.write(row)
+
 
   # Read field data output to csv file from abaqus
   def read_field(self,fname='abaqus.csv'):

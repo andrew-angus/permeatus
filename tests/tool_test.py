@@ -56,48 +56,6 @@ plt.rc('axes',prop_cycle=nord_cycler)
 
 # %%
 """
-# Read xy report
-"""
-
-# %%
-# Read 1 layer abaqus report
-from read_report import *
-data = read_xy('1layer.rpt')
-#print(data)
-
-# %%
-# 1 layer plat
-touts = [0.001,0.05,0.2,2.0]
-for i in range(4):
-    plt.plot(data['X']+0.5,data[f'tout{i+1}'],label=f'{touts[i]:0.3f} s')
-plt.xlabel('$x$ [$m$]')
-plt.ylabel(r'$\varphi$ [mol/$m^3$]')
-plt.legend()
-plt.tight_layout()
-plt.savefig('1layer_abaqus.pgf',bbox_inches='tight')
-plt.show()
-
-# %%
-# 2 layers
-data = read_xy('2layer.rpt')
-for i in range(4):
-    datx = data['X'][np.nonzero(data[f'tout{i+1}'])]+0.5
-    sortargs = np.argsort(datx)
-    datx = datx[sortargs]
-    daty = data[f'tout{i+1}'][np.nonzero(data[f'tout{i+1}'])]
-    daty = daty[sortargs]
-    datx = np.r_[datx,1.0]
-    daty = np.r_[daty,0.0]
-    plt.plot(datx,daty,label=f'{touts[i]:0.3f} s')
-plt.xlabel('$x$ [$m$]')
-plt.ylabel(r'$\varphi$ [mol/$m^3$]')
-plt.legend()
-plt.tight_layout()
-plt.savefig('2layer_abaqus.pgf',bbox_inches='tight')
-plt.show()
-
-# %%
-"""
 # Permeatus 2-layer planar test
 """
 
@@ -105,18 +63,13 @@ plt.show()
 from permeatus import *
 
 # %%
-perm = permeatus(layers=2,L=np.array([0.5,0.5]),D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),C0=1.0,C1=0.0)
+perm = planar(layers=2,L=np.array([0.5,0.5]),D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=1,N=[40,36])
 
 # %%
-perm.read_field('./case_2layer_planar2d/check.csv')
+perm.read_field('./check.csv')
 
 # %%
 perm.plot_1d()
-
-# %%
-a = np.random.rand(10)
-print(a)
-print(a[1:-2:2])
 
 # %%
 xc, C, J = perm.steady_state('C',plot=True)
@@ -136,5 +89,11 @@ print(p[1])
 """
 # Permeatus n-layer planar
 """
+
+# %%
+perm.submit_job()
+
+# %%
+os.system('cat abaqus_script.py')
 
 # %%
