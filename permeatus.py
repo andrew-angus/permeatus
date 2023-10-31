@@ -7,8 +7,8 @@ class permeatus:
 
   # Initialisation arguments
   def __init__(self,layers=None,L=None,D=None,S=None,P=None,\
-              C0=None,C1=None,p0=None,p1=None,\
-              ):
+               C0=None,C1=None,p0=None,p1=None,\
+               N=None,tout=None,tstep=None,ncpu=None):
 
     #TODO Check validity of arguments 
 
@@ -22,6 +22,14 @@ class permeatus:
     self.C1 = C1
     self.p0 = p0
     self.p1 = p1
+    self.N = N
+    self.tout = tout
+    self.tstep = tstep
+    self.ncpu = ncpu
+    self.totL = np.sum(L)
+
+    # Initialise calculated attributes
+    self.J = None
 
     # Calculate P from DS, or vice versa
     if self.D is not None:
@@ -150,6 +158,96 @@ class permeatus:
               if not skip[i]:
                 self.xy[label] = np.append(self.xy[label],float(entries[i]))
 
-  #TODO Linear algebra steady state solution
-  def get_steady_state(self):
-    pass
+  # Linear algebra steady state solution
+  def steady_state(self,y='C',plot=False,showplot=True):
+
+    # Get linear coefficients relating pressure to molar flux
+    k = self.P/self.L
+
+    # Treat low layer number cases seperately
+    # Evaluate pressure, concentration, and molar flux at relevant grid points
+    if self.layers == 1:
+      p = np.array([self.p0,self.p1])
+      J = k[0]*(self.p0-self.p1)
+      C = np.array([self.C0,self.C1])
+      x = np.linspace(0,self.totL,2)
+      xc = np.linspace(0,self.totL,2)
+    elif self.layers == 2:
+      p = np.zeros(3)
+      p[0] = self.p0
+      p[-1] = self.p1
+      p[1] = k[0]*p[0]/(k[0]+k[1])
+      J = k[0]*(p[0]-p[1])
+      C = np.zeros(4)
+      C[:2] = p[:2]*self.S[0]
+      C[2:] = p[1:]*self.S[1]
+      x = np.zeros_like(p)
+      x[-1] = self.totL
+      x[1] = self.L[0]
+      xc = np.linspace(0,self.totL,4)
+      xc[1:-1] = x[1]
+
+    # n-layer solve
+    else:
+      # Populate internal pressure problem arrays
+      # Incorporate boundary conditions
+      b = np.zeros(self.layers-1)
+      b[0] = self.p0
+      b[-1] = self.p1
+      # coefficient matrix
+      a = -k[1:-1]*(np.eye(self.layers,k=1)+np.eye(self.layers,k=-1)) + \
+          (k[:-1]+k[1:])*np.eye(self.layers)
+
+      # Solve for internal pressures
+      p_int = np.linalg.solve(a,b)
+
+      # Calculate molar flux
+      J = k[0]*(self.p0-p_int[0])
+
+      # Construct full pressure array
+      p = np.zeros(self.layers+1)
+      p[0] = self.p0
+      p[-1] = self.p1
+      p[1:-1] = p_int
+
+      # Get x points for pressures
+      x = np.zeros_like(p)
+      x[1:] += np.cumsum(self.L)
+
+      # Calculate concentrations from pressures
+      # x points
+      xc = np.zeros(2*self.layers)
+      xc[-1] = x[-1]
+      xc[1:-2:2] = x[1:-1]
+      xc[2:-1:2] = x[1:-1]
+      # concentrations
+      C = np.zeros_like(xc)
+      C[:-1:2] = S*p[:-1]
+      C[1::2] = S*p[1:]
+
+    # Optionally plot
+    if plot:
+      if y == 'C':
+        plt.plot(xc,C,label='steady-state')
+        plt.ylabel(r'$C$ [mol$m^{-3}$]')
+      else:
+        plt.plot(x,p,label='steady-state')
+        plt.ylabel(r'$p$ [Pa]')
+      plt.xlabel(r'$x$ [$m$]')
+      if showplot:
+        plt.show()
+
+    # Store and return results
+    self.x = x
+    self.p = p
+    self.J = J
+    self.xc = xc
+    self.C = C
+
+    if y == 'C':
+      return xc, C, J
+    else:
+      return x, p, J
+
+
+

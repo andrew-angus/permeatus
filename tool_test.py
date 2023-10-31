@@ -1,5 +1,9 @@
 # %%
-# Imports
+"""
+# Initialisation
+"""
+
+# %%
 import numpy as np
 import matplotlib.pyplot as plt
 import copy
@@ -51,6 +55,11 @@ nord_cycler = (cycler(color=[nord10,nord11,nord7,nord3,nord15,nord12,nord13,nord
 plt.rc('axes',prop_cycle=nord_cycler)
 
 # %%
+"""
+# Read xy report
+"""
+
+# %%
 # Read 1 layer abaqus report
 from read_report import *
 data = read_xy('1layer.rpt')
@@ -88,35 +97,9 @@ plt.savefig('2layer_abaqus.pgf',bbox_inches='tight')
 plt.show()
 
 # %%
-# Read field output csv
-data = read_field('check.csv')
-
-# %%
-# Loop through frames
-for frame in range(1,data['frames']):
-    # Identify path along top of part
-    ymax = np.max(data[frame]['y'])
-    print(frame)
-    pathargs = np.ravel(np.argwhere(data[frame]['y'] > ymax-1e-10))
-    x = data[frame]['x'][pathargs]
-    C = data[frame]['C'][pathargs]
-
-    # Identify unique points
-    """
-    print(len(x),x)
-    x, unique = np.unique(x,return_index=True)
-    print(unique)
-    print(len(x),x)
-    C = C[unique]
-    print(C)
-    """
-    # plot
-    xsort = np.argsort(x)
-    x = x[xsort]
-    C = C[xsort]
-    plt.plot(x,C,label=f"{data[frame]['t']:0.3f} s")
-plt.legend()
-plt.show()
+"""
+# Permeatus 2-layer planar test
+"""
 
 # %%
 from permeatus import *
@@ -125,37 +108,33 @@ from permeatus import *
 perm = permeatus(layers=2,L=np.array([0.5,0.5]),D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),C0=1.0,C1=0.0)
 
 # %%
-print(perm.p0,perm.P)
+perm.read_field('./case_2layer_planar2d/check.csv')
 
 # %%
-perm.read_field('check.csv')
+perm.plot_1d()
 
 # %%
-# Loop through frames
-for frame in range(1,perm.field['frames']):
-    # Identify path along top of part
-    ymax = np.max(perm.field[frame]['y'])
-    pathargs = np.ravel(np.argwhere(perm.field[frame]['y'] > ymax-1e-10))
-    x = perm.field[frame]['x'][pathargs]
-    C = perm.field[frame]['C'][pathargs]
+a = np.random.rand(10)
+print(a)
+print(a[1:-2:2])
 
-    # Identify unique points
-    """
-    print(len(x),x)
-    x, unique = np.unique(x,return_index=True)
-    print(unique)
-    print(len(x),x)
-    C = C[unique]
-    print(C)
-    """
-    # Sort by x-coordinate
-    xsort = np.argsort(x)
-    x = x[xsort]
-    C = C[xsort]
-    plt.plot(x,C,label=f"{perm.field[frame]['t']:0.3f} s")
-plt.legend()
-plt.xlabel(r'$x$ [$m$]')
-plt.ylabel(r'$C$ [mol$m^{-3}$]')
-plt.show()
+# %%
+xc, C, J = perm.steady_state('C',plot=True)
+
+# %%
+print(J)
+print(C[1:-1])
+
+# %%
+xc, p, J = perm.steady_state('p',plot=True)
+
+# %%
+print(J)
+print(p[1])
+
+# %%
+"""
+# Permeatus n-layer planar
+"""
 
 # %%
