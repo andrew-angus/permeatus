@@ -1,5 +1,6 @@
 import numpy as np
 import csv
+import matplotlib.pyplot as plt
 
 # ABAQUS permeation class object
 class permeatus:
@@ -89,30 +90,30 @@ class permeatus:
   def plot_1d(self,y='C'):
 
     # Loop through frames
-    for frame in range(1,perm.field['frames']):
+    for frame in range(1,self.field['frames']):
       # Identify path along top of part
-      ymax = np.max(perm.field[frame]['y'])
-      pathargs = np.ravel(np.argwhere(perm.field[frame]['y'] > ymax-1e-10))
-      x = perm.field[frame]['x'][pathargs]
-      C = perm.field[frame]['C'][pathargs]
+      ymax = np.max(self.field[frame]['y'])
+      pathargs = np.ravel(np.argwhere(self.field[frame]['y'] > ymax-1e-10))
+      x = self.field[frame]['x'][pathargs]
+      C = self.field[frame]['C'][pathargs]
 
-      # Identify unique points
-      """
-      print(len(x),x)
-      x, unique = np.unique(x,return_index=True)
-      print(unique)
-      print(len(x),x)
-      C = C[unique]
-      print(C)
-      """
       # Sort by x-coordinate
       xsort = np.argsort(x)
       x = x[xsort]
       C = C[xsort]
-      plt.plot(x,C,label=f"{perm.field[frame]['t']:0.3f} s")
+
+      #TODO make sure interface points in correct order
+
+      #TODO Plot either concentration or pressure
+      plt.plot(x,C,label=f"{self.field[frame]['t']:0.3f} s")
+
+    # Finalise plotting
     plt.legend()
     plt.xlabel(r'$x$ [$m$]')
-    plt.ylabel(r'$C$ [mol$m^{-3}$]')
+    if y == 'C':
+      plt.ylabel(r'$C$ [mol$m^{-3}$]')
+    else:
+      plt.ylabel(r'$p$ [Pa]')
     plt.show()
 
   # Function which reads xy report from abaqus
@@ -148,3 +149,7 @@ class permeatus:
             for i,label in enumerate(self.xy):
               if not skip[i]:
                 self.xy[label] = np.append(self.xy[label],float(entries[i]))
+
+  #TODO Linear algebra steady state solution
+  def get_steady_state(self):
+    pass
