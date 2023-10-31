@@ -149,7 +149,7 @@ class planar:
     self.field['frames'] = incc+1
 
   # Plot 1D solution
-  def plot_1d(self,y='C'):
+  def plot_1d(self,y='C',showplot=True):
 
     # Loop through frames
     for frame in range(1,self.field['frames']):
@@ -164,10 +164,34 @@ class planar:
       x = x[xsort]
       C = C[xsort]
 
-      #TODO make sure interface points in correct order
+      # Get interfacial points
+      Lx = np.zeros(self.layers+1)
+      Lx[1:] += np.cumsum(self.L)
+      iargsall = {}
+      p = np.zeros(len(C)-self.layers+1)
+      xp = np.unique(x)
+      iargsold = [0,0]
+      for i,j in enumerate(Lx[1:-1]):
+        iargs = np.argwhere(np.isclose(x,j,atol=1e-14,rtol=1e-14)).flatten()
+        iargsall[i] = iargs
+
+        # Get interfacial pressure and swap points if not matching
+        Cint = C[iargs]
+        pint = Cint/self.S[i:i+2]
+        if not np.isclose(pint[0],pint[1],atol=1e-8,rtol=1e-5):
+          x[iargs[0]], x[iargs[1]] = x[iargs[1]], x[iargs[0]]
+          C[iargs[0]], C[iargs[1]] = C[iargs[1]], C[iargs[0]]
+
+        # Calculate final pressure array
+        p[iargsold[1]-i:iargs[1]-i] = C[iargsold[1]:iargs[1]]/self.S[i]
+        iargsold = iargs
+      p[iargsold[1]-(i+1):] = C[iargsold[1]:]/self.S[-1]
 
       #TODO Plot either concentration or pressure
-      plt.plot(x,C,label=f"{self.field[frame]['t']:0.3f} s")
+      if y == 'C':
+        plt.plot(x,C,label=f"{self.field[frame]['t']:0.3f} s")
+      else:
+        plt.plot(xp,p,label=f"{self.field[frame]['t']:0.3f} s")
 
     # Finalise plotting
     plt.legend()
@@ -176,7 +200,8 @@ class planar:
       plt.ylabel(r'$C$ [mol$m^{-3}$]')
     else:
       plt.ylabel(r'$p$ [Pa]')
-    plt.show()
+    if showplot:
+      plt.show()
 
   # Function which reads xy report from abaqus
   def read_xy(self,fname='abaqus.rpt'):

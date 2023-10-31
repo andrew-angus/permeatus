@@ -108,7 +108,10 @@ perm.submit_job()
 perm.read_field()
 
 # %%
-perm.plot_1d()
+perm.plot_1d('C')
+
+# %%
+perm.plot_1d('p')
 
 # %%
 xc, C, J = perm.steady_state('C',plot=True)
@@ -123,3 +126,17 @@ xc, p, J = perm.steady_state('p',plot=True)
 # %%
 print(J)
 print(p[1:-1])
+
+# %%
+perm.plot_1d('C',showplot=False)
+scrap = perm.steady_state('C',plot=True,showplot=False)
+plt.legend()
+plt.show()
+
+# %%
+perm.plot_1d('p',showplot=False)
+scrap = perm.steady_state('p',plot=True,showplot=False)
+plt.legend()
+plt.show()
+
+# %%
