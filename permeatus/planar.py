@@ -8,7 +8,7 @@ import os
 from importlib.resources import files
 import permeatus
 
-# ABAQUS permeation class object
+# ABAQUS planar permeation class object
 class planar:
 
   # Initialisation arguments
@@ -52,6 +52,10 @@ class planar:
     self.C = None
     self.x = None
     self.xc = None
+    self.Pavg = None
+    self.Davg = None
+    self.Savg = None
+
 
     # Nielsen model if applicable
     if Vd_frac is not None:
@@ -193,28 +197,33 @@ class planar:
       x = x[xsort]
       C = C[xsort]
 
-      # Get interfacial points
-      Lx = np.zeros(self.layers+1)
-      Lx[1:] += np.cumsum(self.L)
-      iargsall = {}
-      p = np.zeros(len(C)-self.layers+1)
-      xp = np.unique(x)
-      iargsold = [0,0]
-      for i,j in enumerate(Lx[1:-1]):
-        iargs = np.argwhere(np.isclose(x,j,atol=1e-14,rtol=1e-14)).flatten()
-        iargsall[i] = iargs
+      if self.layers > 1:
+        # Get interfacial points
+        Lx = np.zeros(self.layers+1)
+        Lx[1:] += np.cumsum(self.L)
+        iargsall = {}
+        p = np.zeros(len(C)-self.layers+1)
+        xp = np.unique(x)
+        iargsold = [0,0]
+        for i,j in enumerate(Lx[1:-1]):
+          iargs = np.argwhere(np.isclose(x,j,atol=1e-14,rtol=1e-14)).flatten()
+          iargsall[i] = iargs
 
-        # Get interfacial pressure and swap points if not matching
-        Cint = C[iargs]
-        pint = Cint/self.S[i:i+2]
-        if not np.isclose(pint[0],pint[1],atol=1e-8,rtol=1e-5):
-          x[iargs[0]], x[iargs[1]] = x[iargs[1]], x[iargs[0]]
-          C[iargs[0]], C[iargs[1]] = C[iargs[1]], C[iargs[0]]
+          # Get interfacial pressure and swap points if not matching
+          Cint = C[iargs]
+          pint = Cint/self.S[i:i+2]
+          if not np.isclose(pint[0],pint[1],atol=1e-8,rtol=1e-5):
+            x[iargs[0]], x[iargs[1]] = x[iargs[1]], x[iargs[0]]
+            C[iargs[0]], C[iargs[1]] = C[iargs[1]], C[iargs[0]]
 
-        # Calculate final pressure array
-        p[iargsold[1]-i:iargs[1]-i] = C[iargsold[1]:iargs[1]]/self.S[i]
-        iargsold = iargs
-      p[iargsold[1]-(i+1):] = C[iargsold[1]:]/self.S[-1]
+          # Calculate final pressure array
+          p[iargsold[1]-i:iargs[1]-i] = C[iargsold[1]:iargs[1]]/self.S[i]
+          iargsold = iargs
+        p[iargsold[1]-(i+1):] = C[iargsold[1]:]/self.S[-1]
+      else:
+        xp = x
+        p = C/self.S[0]
+
 
       #TODO Plot either concentration or pressure
       if y == 'C':
@@ -356,5 +365,22 @@ class planar:
     else:
       return x, p, J
 
+  #TODO extract molar flux from gradient of abaqus solution
+  def get_molar_flux(self):
+    pass
 
+  #TODO calculate mass diffusion
+  def get_mass_diffusion(self):
+    pass
 
+  #TODO calculate flowrate
+  def get_flowrate(self):
+    pass
+
+  # Get averaget coefficients
+  def get_avg_coeffs(self):
+
+    # Avg coefficients are function of molar flux, system size and BCs
+    self.Davg = self.J*self.totL/(self.C0-self.C1)
+    self.Pavg = self.J*self.totL/(self.p0-self.p1)
+    self.Savg = self.Pavg/self.Davg

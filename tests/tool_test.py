@@ -75,7 +75,10 @@ perm.submit_job()
 perm.read_field()
 
 # %%
-perm.plot_1d()
+perm.plot_1d(showplot=False)
+plt.tight_layout()
+plt.savefig('abaqus2layer.pgf',bbox_inches='tight')
+plt.show()
 
 # %%
 xc, C, J = perm.steady_state('C',plot=True)
@@ -129,14 +132,18 @@ print(p[1:-1])
 
 # %%
 perm.plot_1d('C',showplot=False)
-scrap = perm.steady_state('C',plot=True,showplot=False)
+x, p, J = perm.steady_state('C',plot=True,showplot=False)
 plt.legend()
+plt.tight_layout()
+plt.savefig('abaqus3layer.pgf',bbox_inches='tight')
 plt.show()
 
 # %%
 perm.plot_1d('p',showplot=False)
 scrap = perm.steady_state('p',plot=True,showplot=False)
 plt.legend()
+plt.tight_layout()
+plt.savefig('abaqus3layerp.pgf',bbox_inches='tight')
 plt.show()
 
 # %%
@@ -174,10 +181,52 @@ print(C[1:-1])
 perm.plot_1d('p',showplot=False)
 xc, C, J = perm.steady_state('p',plot=True,showplot=False)
 plt.legend()
+plt.tight_layout()
+plt.savefig('abaqusnielsen.pgf',bbox_inches='tight')
 plt.show()
 
 # %%
 print(J)
 print(p[1:-1])
+
+# %%
+"""
+## Average coefficients
+"""
+
+# %%
+perm.get_avg_coeffs()
+print(perm.Davg,perm.Savg,perm.Pavg)
+
+# %%
+# Check above with single layer average sim
+permavg = planar(layers=1,L=np.array([1.0]),D=np.array([perm.Davg]),S=np.array([perm.Savg]),\
+              C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=1,N=[80])
+
+# %%
+permavg.submit_job()
+
+# %%
+permavg.read_field()
+
+# %%
+permavg.plot_1d('C',showplot=False)
+x, p, J = permavg.steady_state('C',plot=True,showplot=False)
+plt.legend()
+plt.show()
+
+# %%
+print(J)
+
+# %%
+permavg.plot_1d('p',showplot=False)
+xc, C, J = permavg.steady_state('p',plot=True,showplot=False)
+plt.legend()
+plt.tight_layout()
+#plt.savefig('abaqusnielsen.pgf',bbox_inches='tight')
+plt.show()
+
+# %%
+print(J)
 
 # %%
