@@ -14,7 +14,8 @@ class planar:
   # Initialisation arguments
   def __init__(self,layers,L,touts,D=None,S=None,P=None,\
                C0=None,C1=None,p0=None,p1=None,\
-               N=None,tstep=None,ncpu=None):
+               N=None,tstep=None,ncpu=None,\
+               Dc=None,Sc=None,Pc=None,Vd_frac=None,AR=None):
 
     # Defaults
     if ncpu is None:
@@ -41,16 +42,41 @@ class planar:
     self.tstep = tstep
     self.ncpu = ncpu
     self.totL = np.sum(L)
+    self.Dc = Dc
+    self.Sc = Sc
+    self.Pc = Pc
 
     # Initialise calculated attributes
     self.J = None
+    self.p = None
+    self.C = None
+    self.x = None
+    self.xc = None
 
-    # Calculate P from DS, or vice versa
-    if self.D is not None:
+    # Nielsen model if applicable
+    if Vd_frac is not None:
+
+      # Get tortuosity
+      tortuosity = 1 + 0.5*AR*Vd_frac
+
+      # Calculate Pc from DcSc, or vice versa
+      if self.Dc is not None:
+        self.Pc = self.Dc*self.Sc
+      elif self.P is not None:
+        self.Dc = self.Pc
+        self.Sc = np.ones_like(self.Dc)
+
+      # Evaluate effective coefficients
+      self.D = self.Dc/tortuosity
+      self.S = self.Sc*(1-Vd_frac)
       self.P = self.D*self.S
-    elif self.P is not None:
-      self.D = self.P
-      self.S = np.ones_like(self.D)
+    else:
+      # Calculate P from DS, or vice versa
+      if self.D is not None:
+        self.P = self.D*self.S
+      elif self.P is not None:
+        self.D = self.P
+        self.S = np.ones_like(self.D)
 
     # Calculate one BC from the other
     if self.p0 is not None:

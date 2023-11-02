@@ -140,3 +140,44 @@ plt.legend()
 plt.show()
 
 # %%
+"""
+# Nielsen Model
+"""
+
+# %%
+#TODO use real polymer system
+perm = planar(layers=3,L=np.array([0.4,0.3,0.3]),Dc=np.array([1.0,0.1,0.5]),Sc=np.array([1.0,1.1,0.7]),\
+              C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=1,N=[40,36,32],Vd_frac=np.array([0.0,0.2,0.0]),AR=np.array([1.0,2.0,1.0]))
+
+# %%
+print(perm.D)
+print(perm.S)
+print(perm.P)
+
+# %%
+perm.submit_job()
+
+# %%
+perm.read_field()
+
+# %%
+perm.plot_1d('C',showplot=False)
+x, p, J = perm.steady_state('C',plot=True,showplot=False)
+plt.legend()
+plt.show()
+
+# %%
+print(J)
+print(C[1:-1])
+
+# %%
+perm.plot_1d('p',showplot=False)
+xc, C, J = perm.steady_state('p',plot=True,showplot=False)
+plt.legend()
+plt.show()
+
+# %%
+print(J)
+print(p[1:-1])
+
+# %%
