@@ -1,2 +1,3 @@
 separate treatment of pressure-based or concentration-based simulations
 discrepancy in steady-state and abaqus single-layer solution
+convert list arguments to numpy arrays in __init__
