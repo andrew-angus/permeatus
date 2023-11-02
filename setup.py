@@ -1,4 +1,5 @@
 #!/bin/python3
+# Author: Andrew Angus
 
 from setuptools import setup,find_packages
 

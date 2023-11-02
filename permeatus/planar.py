@@ -1,3 +1,6 @@
+#!/bin/python3
+# Author: Andrew Angus
+
 import numpy as np
 import csv
 import matplotlib.pyplot as plt
