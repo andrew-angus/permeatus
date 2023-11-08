@@ -15,9 +15,13 @@ from visualization import *
 from connectorBehavior import *
 from abaqus import *
 from abaqusConstants import *
+from math import *
+import sys
 
 # Variable parameters
-L = [0.5,0.5]
+inner_r = 0.5
+dr = [0.5,0.5]
+arc_extent = 0.25
 D = [1.0,0.1]
 S = [1.0,1.1]
 N = [40,40]
@@ -28,8 +32,8 @@ tstep = 0.001
 ncpu = 1
 
 # Derivative parameters
-totL = sum(L)
-nlayer = len(L)
+outer_r = sum(dr)+inner_r
+nlayer = len(dr)
 
 # Establish viewport
 myViewport = session.Viewport(name='viewport',
@@ -40,24 +44,49 @@ session.viewports['viewport'].maximize()
 # Permeation model
 perm = mdb.Model(name='perm')
 
-# Define rectangular sketch instance
-sketch = perm.ConstrainedSketch(name='sketch',sheetSize=2.1*totL)
-sketch.rectangle(point1=(0.0,1.0),point2=(totL,0.0))
+# Define sketch sheet
+sketch = perm.ConstrainedSketch(name='sketch',sheetSize=2.1*outer_r)
+
+# Get arc coordinates for inner and outer part limits
+theta = arc_extent*pi
+x1 = inner_r*cos(theta)
+y1 = inner_r*sin(theta)
+x2 = inner_r*cos(-theta)
+y2 = inner_r*sin(-theta)
+x3 = outer_r*cos(theta)
+y3 = outer_r*sin(theta)
+x4 = outer_r*cos(-theta)
+y4 = outer_r*sin(-theta)
+
+# Draw part sketch
+sketch.ArcByCenterEnds(center=(0.0, 0.0),direction=CLOCKWISE, \
+    point1=(x1, y1), point2=(x2, y2))
+sketch.ArcByCenterEnds(center=(0.0, 0.0),direction=CLOCKWISE, \
+    point1=(x3, y3), point2=(x4, y4))
+sketch.Line(point1=(x1, y1), point2=(x3, y3))
+sketch.Line(point1=(x2, y2), point2=(x4, y4))
 
 # Define 2D shell part using sketch
 part = perm.Part(dimensionality=TWO_D_PLANAR, name='part', type=DEFORMABLE_BODY)
 part.BaseShell(sketch=sketch)
 
+
 # Partition into distinct layers
-ticker = 0.0
+ticker = inner_r
 for i in range(nlayer-1):
-  ticker += L[i]
-  part.PartitionFaceByShortestPath(faces= \
-      part.faces.findAt(((ticker,0.5,0.0), ), ), \
-      point1=(ticker,0.0,0.0), point2=(ticker,1.0,0.0))
+  ticker += dr[i]
+  x1 = ticker*cos(theta)
+  y1 = ticker*sin(theta)
+  x2 = ticker*cos(-theta)
+  y2 = ticker*sin(-theta)
+  part.PartitionFaceByCurvedPathEdgePoints(\
+      edge1=part.edges.findAt(((x1,y1,0.0), ), )[0], \
+      edge2=part.edges.findAt(((x2,y2,0.0), ), )[0], \
+      face=part.faces.findAt(((ticker,0.0,0.0), ), )[0], \
+      point1=(x1,y1,0.0),point2=(x2,y2,0.0))
 
 # Define and assign layer properties
-ticker = 0.0
+ticker = inner_r
 for i in range(nlayer):
   # Material properties
   perm.Material(name='layer'+str(i))
@@ -66,10 +95,10 @@ for i in range(nlayer):
   perm.materials['layer'+str(i)].Solubility(table=((S[i], ), ))
 
   # Material assignment to sections
-  ticker += L[i]
-  midlayer = ticker - L[i]/2
+  ticker += dr[i]
+  midlayer = ticker - dr[i]/2
   perm.HomogeneousSolidSection(material='layer'+str(i), name='layer'+str(i),thickness=None)
-  setlayer = part.Set(faces=part.faces.findAt(((midlayer,0.5,0.0), ), ), name='layer'+str(i))
+  setlayer = part.Set(faces=part.faces.findAt(((midlayer,0.0,0.0), ), ), name='layer'+str(i))
   part.SectionAssignment(offset=0.0,offsetField='',offsetType=MIDDLE_SURFACE, \
       region=setlayer,sectionName='layer'+str(i),thicknessAssignment=FROM_SECTION)
 
@@ -78,15 +107,15 @@ instance = perm.rootAssembly.Instance(dependent=OFF, name='instance', part=part)
 
 # Mesh initialisation
 face = []
-ticker = 0.0
+ticker = inner_r
 for i in range(nlayer):
   # Get face of layer
-  ticker += L[i]
-  midlayer = ticker - L[i]/2
-  face.append(instance.faces.findAt(((midlayer,0.5,0.0), ), ))
+  ticker += dr[i]
+  midlayer = ticker - dr[i]/2
+  face.append(instance.faces.findAt(((midlayer,0.0,0.0), ), ))
 
   # Set mesh controls
-  perm.rootAssembly.setMeshControls(elemShape=QUAD, regions=face[i], \
+  perm.rootAssembly.setMeshControls(elemShape=TRI, regions=face[i], \
       technique=STRUCTURED)
 
 # Set element types for all faces
@@ -94,28 +123,35 @@ perm.rootAssembly.setElementType(elemTypes=(ElemType( \
     elemCode=DC2D8, elemLibrary=STANDARD), ElemType(elemCode=DC2D6, \
     elemLibrary=STANDARD)), regions=tuple(face[i] for i in range(len(face))))
 
+mdb.saveAs(pathName='./model')
+#sys.exit()
+
 # Seed mesh edges and generate
-# Left and right boundaries
+# Inner and outer boundaries
 perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, edges= \
-    instance.edges.findAt(((0.0,0.5,0.0), ), ), number=1)
+    instance.edges.findAt(((inner_r,0.0,0.0), ), ), number=max(1,int(theta/(pi*9/360))))
 perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, edges= \
-    instance.edges.findAt(((totL,0.5,0.0), ), ), number=1)
+    instance.edges.findAt(((outer_r,0.0,0.0), ), ), number=max(1,int(theta/(pi*9/360))))
 
 # Seed upper and lower edges for each layer
-ticker = 0.0
+ticker = inner_r
 maxele = 0.0
 for i in range(nlayer):
-  ticker += L[i]
-  midlayer = ticker - L[i]/2
+  ticker += dr[i]
+  midlayer = ticker - dr[i]/2
+  x1 = midlayer*cos(theta)
+  y1 = midlayer*sin(theta)
+  x2 = midlayer*cos(-theta)
+  y2 = midlayer*sin(-theta)
   perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, \
-      edges= instance.edges.findAt(((midlayer,1.0,0.0), ), ), \
+      edges= instance.edges.findAt(((x1,y1,0.0), ), ), \
       number=N[i])
   perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, \
-      edges= instance.edges.findAt(((midlayer,0.0,0.0), ), ), \
+      edges= instance.edges.findAt(((x2,y2,0.0), ), ), \
       number=N[i])
 
-  # Track maximum element size in x-direction
-  elesize = L[i]/N[i]
+  # Track maximum element size in r-direction
+  elesize = dr[i]/N[i]
   if elesize > maxele:
     maxele = elesize
 
@@ -130,17 +166,18 @@ perm.MassDiffusionStep(dcmax=C0, end=0.0, initialInc=initInc, \
     maxInc=maxInc, minInc=minInc, name='diffusion', previous='Initial', \
     timePeriod=touts[-1], maxNumInc=int(touts[-1]/minInc)+1)
 
+
 # Concentration BCs
 perm.rootAssembly.Set(edges= \
-    instance.edges.findAt(((0.0,0.5,0.0), ), ), name='left')
+    instance.edges.findAt(((inner_r,0.0,0.0), ), ), name='inner')
 perm.rootAssembly.Set(edges= \
-    instance.edges.findAt(((totL,0.5,0.0), ), ), name='right')
+    instance.edges.findAt(((outer_r,0.0,0.0), ), ), name='outer')
 perm.ConcentrationBC(amplitude=UNSET, createStepName=
     'diffusion', distributionType=UNIFORM, fieldName='', fixed=OFF, magnitude=
-    C0, name='source', region=perm.rootAssembly.sets['left'])
+    C0, name='source', region=perm.rootAssembly.sets['inner'])
 perm.ConcentrationBC(amplitude=UNSET, createStepName=
     'diffusion', distributionType=UNIFORM, fieldName='', fixed=OFF, magnitude=
-    C1, name='sink', region=perm.rootAssembly.sets['right'])
+    C1, name='sink', region=perm.rootAssembly.sets['outer'])
 
 # Set absolute zero temperature
 perm.setValues(absoluteZero=0.0)
@@ -159,6 +196,7 @@ mdb.Job(atTime=None, contactPrint=OFF, description='', echoPrint=OFF,
     numCpus=ncpu, numGPUs=0, numThreadsPerMpiProcess=1, queue=None, resultsFormat=
     ODB, scratch='', type=ANALYSIS, userSubroutine='', waitHours=0, 
     waitMinutes=0)
+mdb.saveAs(pathName='./model')
 mdb.jobs['sim'].submit()
 mdb.jobs['sim'].waitForCompletion()
 

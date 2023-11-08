@@ -25,7 +25,6 @@ setup(
   python_requires='>=3.9',
   install_requires=[
     "numpy",
-    #"setuptools<66.0.0",
     "matplotlib",
     ],
 )
