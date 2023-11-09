@@ -12,10 +12,11 @@ import permeatus
 class planar:
 
   # Initialisation arguments
-  def __init__(self,layers,L,touts,D=None,S=None,P=None,\
+  def __init__(self,layers,L=None,touts=None,D=None,S=None,P=None,\
                C0=None,C1=None,p0=None,p1=None,\
                N=None,tstep=None,ncpu=None,\
-               Dc=None,Sc=None,Pc=None,Vd_frac=None,AR=None):
+               Dc=None,Sc=None,Pc=None,Vd_frac=None,AR=None,\
+               Dd=None,Sd=None,Pd=None,model=None):
 
     # Defaults
     if ncpu is None:
@@ -45,6 +46,12 @@ class planar:
     self.Dc = Dc
     self.Sc = Sc
     self.Pc = Pc
+    self.Dd = Dd
+    self.Sd = Sd
+    self.Pd = Pd
+    self.Vd_frac = Vd_frac
+    self.AR = AR
+    self.model = model
 
     # Initialise calculated attributes
     self.J = None
@@ -55,25 +62,46 @@ class planar:
     self.Pavg = None
     self.Davg = None
     self.Savg = None
+    self.P_upper = None
+    self.D_upper = None
+    self.S_upper = None
+    self.P_lower = None
+    self.D_lower = None
+    self.S_lower = None
 
+    # Set dispersed phase coefficients to zeros if none
+    if Pd is None and Dd is None:
+      Pd = np.zeros(layers)
+      Dd = np.zeros(layers)
+      Sd = np.zeros(layers)
+    # Else get one from the other
+    else:
+      if self.Dd is not None:
+        self.Pd = self.Dd*self.Sd
+      elif self.Pd is not None:
+        self.Dd = self.Pd
+        self.Sd = np.ones_like(self.Dd)
 
     # Nielsen model if applicable
-    if Vd_frac is not None:
-
-      # Get tortuosity
-      tortuosity = 1 + 0.5*AR*Vd_frac
+    if self.Vd_frac is not None:
 
       # Calculate Pc from DcSc, or vice versa
       if self.Dc is not None:
         self.Pc = self.Dc*self.Sc
-      elif self.P is not None:
+      elif self.Pc is not None:
         self.Dc = self.Pc
         self.Sc = np.ones_like(self.Dc)
 
       # Evaluate effective coefficients
-      self.D = self.Dc/tortuosity
-      self.S = self.Sc*(1-Vd_frac)
-      self.P = self.D*self.S
+      if model == 'Nielsen':
+        tortuosity = 1 + 0.5*self.AR*self.Vd_frac
+        self.D = self.Dc/mdiv(tortuosity)
+        self.S = self.Sc*(1-Vd_frac)
+        self.P = self.D*self.S
+      elif model == None:
+        self.P = self.Pc
+        self.D = self.Dc
+        self.S = self.Sc
     else:
       # Calculate P from DS, or vice versa
       if self.D is not None:
@@ -86,11 +114,11 @@ class planar:
     if self.p0 is not None:
       self.C0 = self.p0*self.S[0]
     elif self.C0 is not None:
-      self.p0 = self.C0/self.S[0]
+      self.p0 = self.C0/mdiv(self.S[0])
     if self.p1 is not None:
       self.C1 = self.p1*self.S[-1]
     elif self.C1 is not None:
-      self.p1 = self.C1/self.S[-1]
+      self.p1 = self.C1/mdiv(self.S[-1])
 
   # Submit ABAQUS job
   def submit_job(self):
@@ -217,9 +245,9 @@ class planar:
             C[iargs[0]], C[iargs[1]] = C[iargs[1]], C[iargs[0]]
 
           # Calculate final pressure array
-          p[iargsold[1]-i:iargs[1]-i] = C[iargsold[1]:iargs[1]]/self.S[i]
+          p[iargsold[1]-i:iargs[1]-i] = C[iargsold[1]:iargs[1]]/mdiv(self.S[i])
           iargsold = iargs
-        p[iargsold[1]-(i+1):] = C[iargsold[1]:]/self.S[-1]
+        p[iargsold[1]-(i+1):] = C[iargsold[1]:]/mdiv(self.S[-1])
       else:
         xp = x
         p = C/self.S[0]
@@ -279,7 +307,7 @@ class planar:
   def steady_state(self,y='C',plot=False,showplot=True):
 
     # Get linear coefficients relating pressure to molar flux
-    k = self.P/self.L
+    k = self.P/mdiv(self.L)
 
     # Treat low layer number cases seperately
     # Evaluate pressure, concentration, and molar flux at relevant grid points
@@ -293,7 +321,7 @@ class planar:
       p = np.zeros(3)
       p[0] = self.p0
       p[-1] = self.p1
-      p[1] = k[0]*p[0]/(k[0]+k[1])
+      p[1] = k[0]*p[0]/mdiv(k[0]+k[1])
       J = k[0]*(p[0]-p[1])
       C = np.zeros(4)
       C[:2] = p[:2]*self.S[0]
@@ -377,10 +405,89 @@ class planar:
   def get_flowrate(self):
     pass
 
-  # Get averaget coefficients
+  # For composite/crystalline structures, acquire average property bounds
+  def get_eff_bnds(self,method='Wiener',set_eff='False'):
+
+    # Wiener bounds, or absolute bounds by geometric and arithmetic means
+    Vc_frac = 1-self.Vd_frac
+    if method == 'Wiener':
+      self.P_upper = Vc_frac*self.Pc + self.Vd_frac*self.Pd
+      self.D_upper = Vc_frac*self.Dc + self.Vd_frac*self.Dd
+      self.S_upper = Vc_frac*self.Sc + self.Vd_frac*self.Sd
+      self.P_lower = 1/mdiv(Vc_frac/mdiv(self.Pc)+self.Vd_frac/mdiv(self.Pd))
+      self.D_lower = 1/mdiv(Vc_frac/mdiv(self.Dc)+self.Vd_frac/mdiv(self.Dd))
+      self.S_lower = 1/mdiv(Vc_frac/mdiv(self.Sc)+self.Vd_frac/mdiv(self.Sd))
+
+    # Hashin and Strikman bounds, tighter than Wiener assuming structural isotropy
+    elif method == 'HAS':
+      self.P_upper = np.zeros(self.layers)
+      self.D_upper = np.zeros(self.layers)
+      self.S_upper = np.zeros(self.layers)
+      self.P_lower = np.zeros(self.layers)
+      self.D_lower = np.zeros(self.layers)
+      self.S_lower = np.zeros(self.layers)
+
+      # Calculate upper and lower bounds (although which is which is yet to be
+      # be determined
+      Pcplus = self.Pc + self.Vd_frac/mdiv(1/mdiv(self.Pd-self.Pc) \
+          +Vc_frac/mdiv(3*self.Pc))
+      Pdplus = self.Pd + Vc_frac/(1/mdiv(self.Pc-self.Pd) \
+          +self.Vd_frac/mdiv(3*self.Pd))
+      Dcplus = self.Dc + self.Vd_frac/mdiv(1/mdiv(self.Dd-self.Dc) \
+          +Vc_frac/mdiv(3*self.Dc))
+      Ddplus = self.Dd + Vc_frac/mdiv(1/mdiv(self.Dc-self.Dd) \
+          +self.Vd_frac/mdiv(3*self.Dd))
+      Scplus = self.Sc + self.Vd_frac/mdiv(1/mdiv(self.Sd-self.Sc) \
+          +Vc_frac/mdiv(3*self.Sc))
+      Sdplus = self.Sd + Vc_frac/mdiv(1/mdiv(self.Sc-self.Sd) \
+          +self.Vd_frac/mdiv(3*self.Sd))
+
+      # Looping over layers required since relative magnitude \
+      # of each phases coefficients important
+      for i in range(self.layers):
+        if self.Pc[i] > self.Pd[i]:
+          self.P_upper[i] = Pcplus[i]
+          self.P_lower[i] = Pdplus[i]
+        else:
+          self.P_upper[i] = Pdplus[i]
+          self.P_lower[i] = Pcplus[i]
+        if self.Dc[i] > self.Dd[i]:
+          self.D_upper[i] = Dcplus[i]
+          self.D_lower[i] = Ddplus[i]
+        else:
+          self.D_upper[i] = Ddplus[i]
+          self.D_lower[i] = Dcplus[i]
+        if self.Sc[i] > self.Sd[i]:
+          self.S_upper[i] = Scplus[i]
+          self.S_lower[i] = Sdplus[i]
+        else:
+          self.S_upper[i] = Sdplus[i]
+          self.S_lower[i] = Scplus[i]
+
+    # If desired, set effective coefficients as upper, lower, or avg
+    if set_eff == 'upper':
+      self.P = self.P_upper
+      self.D = self.D_upper
+      self.S = self.S_upper
+    elif set_eff == 'lower':
+      self.P = self.P_lower
+      self.D = self.D_lower
+      self.S = self.S_lower
+    elif set_eff == 'avg':
+      self.P = (self.P_lower+self.P_upper)*0.5
+      self.D = (self.D_lower+self.D_upper)*0.5
+      self.S = (self.S_lower+self.S_upper)*0.5
+
+  # Get average coefficients for multiple layered system
   def get_avg_coeffs(self):
 
     # Avg coefficients are function of molar flux, system size and BCs
-    self.Davg = self.J*self.totL/(self.C0-self.C1)
-    self.Pavg = self.J*self.totL/(self.p0-self.p1)
-    self.Savg = self.Pavg/self.Davg
+    self.Davg = self.J*self.totL/mdiv(self.C0-self.C1)
+    self.Pavg = self.J*self.totL/mdiv(self.p0-self.p1)
+    self.Savg = self.Pavg/mdiv(self.Davg)
+
+# Avoid divisions by zero
+def mdiv(diver):
+  return np.where(np.abs(diver) > np.finfo(np.float64).tiny, \
+      diver, np.finfo(np.float64).tiny)
+
