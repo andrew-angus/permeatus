@@ -135,6 +135,8 @@ class planar:
           # Change desired lines
           if  row.startswith("L = "):
             o.write(f'L = {list(self.L)}\n')
+          elif row.startswith("r = "):
+            o.write(f'r = {self.r}\n')
           elif row.startswith("D = "):
             o.write(f'D = {list(self.D)}\n')
           elif row.startswith("S = "):
@@ -211,7 +213,7 @@ class planar:
     self.field['frames'] = incc+1
 
   # Plot 1D solution
-  def plot_1d(self,y='C',showplot=True,timemask=None,plotlabels=None):
+  def plot_1d(self,target='C',showplot=True,timemask=None,plotlabels=None):
 
     if timemask is None:
       timemask = [True for i in range(len(self.touts)+1)]
@@ -219,34 +221,34 @@ class planar:
     # Loop through frames
     for frame in range(1,self.field['frames']):
       if timemask[frame]:
-        # Identify path along top of part
-        ymax = np.max(self.field[frame]['y'])
-        pathargs = np.ravel(np.argwhere(self.field[frame]['y'] > ymax-1e-10))
-        x = self.field[frame]['x'][pathargs]
+        # Identify path along part centreline in y-direction
+        pathargs = np.ravel(np.argwhere(self.field[frame]['x'] < 1e-10))
+        y = self.field[frame]['y'][pathargs]
         C = self.field[frame]['C'][pathargs]
 
         # Sort by x-coordinate
-        xsort = np.argsort(x)
-        x = x[xsort]
-        C = C[xsort]
+        ysort = np.argsort(y)
+        y = y[ysort]
+        C = C[ysort]
 
         if self.layers > 1:
           # Get interfacial points
-          Lx = np.zeros(self.layers+1)
-          Lx[1:] += np.cumsum(self.L)
+          Ly = np.zeros(self.layers+1)
+          Ly[1:] += np.cumsum(self.L)
           iargsall = {}
           p = np.zeros(len(C)-self.layers+1)
-          xp = np.unique(x)
+          yp = np.unique(y)
           iargsold = [0,0]
-          for i,j in enumerate(Lx[1:-1]):
-            iargs = np.argwhere(np.isclose(x,j,atol=1e-14,rtol=1e-14)).flatten()
+          for i,j in enumerate(Ly[1:-1]):
+            #print(y,j)
+            iargs = np.argwhere(np.isclose(y,j)).flatten()#,atol=1e-14,rtol=1e-14)).flatten()
             iargsall[i] = iargs
 
             # Get interfacial pressure and swap points if not matching
             Cint = C[iargs]
             pint = Cint/self.S[i:i+2]
             if not np.isclose(pint[0],pint[1],atol=1e-8,rtol=1e-5):
-              x[iargs[0]], x[iargs[1]] = x[iargs[1]], x[iargs[0]]
+              y[iargs[0]], y[iargs[1]] = y[iargs[1]], y[iargs[0]]
               C[iargs[0]], C[iargs[1]] = C[iargs[1]], C[iargs[0]]
 
             # Calculate final pressure array
@@ -254,7 +256,7 @@ class planar:
             iargsold = iargs
           p[iargsold[1]-(i+1):] = C[iargsold[1]:]/mdiv(self.S[-1])
         else:
-          xp = x
+          yp = y
           p = C/self.S[0]
 
 
@@ -263,15 +265,15 @@ class planar:
           label = f"{self.field[frame]['t']:0.3f} s"
         else:
           label = plotlabels[frame]
-        if y == 'C':
-          plt.plot(x,C,label=label)
+        if target == 'C':
+          plt.plot(y,C,label=label)
         else:
-          plt.plot(xp,p,label=label)
+          plt.plot(yp,p,label=label)
 
     # Finalise plotting
     plt.legend()
-    plt.xlabel(r'$x$ [$m$]')
-    if y == 'C':
+    plt.xlabel(r'$z$ [$m$]')
+    if target == 'C':
       plt.ylabel(r'$C$ [mol$m^{-3}$]')
     else:
       plt.ylabel(r'$p$ [Pa]')
