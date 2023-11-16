@@ -12,7 +12,7 @@ import permeatus
 class planar:
 
   # Initialisation arguments
-  def __init__(self,layers,L=None,touts=None,D=None,S=None,P=None,\
+  def __init__(self,layers,r=None,L=None,touts=None,D=None,S=None,P=None,\
                C0=None,C1=None,p0=None,p1=None,\
                N=None,tstep=None,ncpu=None,\
                Dc=None,Sc=None,Pc=None,Vd_frac=None,AR=None,\
@@ -30,6 +30,7 @@ class planar:
 
     # Assign attributes
     self.layers = layers
+    self.r = r
     self.L = L
     self.D = D
     self.S = S
@@ -210,54 +211,62 @@ class planar:
     self.field['frames'] = incc+1
 
   # Plot 1D solution
-  def plot_1d(self,y='C',showplot=True):
+  def plot_1d(self,y='C',showplot=True,timemask=None,plotlabels=None):
+
+    if timemask is None:
+      timemask = [True for i in range(len(self.touts)+1)]
 
     # Loop through frames
     for frame in range(1,self.field['frames']):
-      # Identify path along top of part
-      ymax = np.max(self.field[frame]['y'])
-      pathargs = np.ravel(np.argwhere(self.field[frame]['y'] > ymax-1e-10))
-      x = self.field[frame]['x'][pathargs]
-      C = self.field[frame]['C'][pathargs]
+      if timemask[frame]:
+        # Identify path along top of part
+        ymax = np.max(self.field[frame]['y'])
+        pathargs = np.ravel(np.argwhere(self.field[frame]['y'] > ymax-1e-10))
+        x = self.field[frame]['x'][pathargs]
+        C = self.field[frame]['C'][pathargs]
 
-      # Sort by x-coordinate
-      xsort = np.argsort(x)
-      x = x[xsort]
-      C = C[xsort]
+        # Sort by x-coordinate
+        xsort = np.argsort(x)
+        x = x[xsort]
+        C = C[xsort]
 
-      if self.layers > 1:
-        # Get interfacial points
-        Lx = np.zeros(self.layers+1)
-        Lx[1:] += np.cumsum(self.L)
-        iargsall = {}
-        p = np.zeros(len(C)-self.layers+1)
-        xp = np.unique(x)
-        iargsold = [0,0]
-        for i,j in enumerate(Lx[1:-1]):
-          iargs = np.argwhere(np.isclose(x,j,atol=1e-14,rtol=1e-14)).flatten()
-          iargsall[i] = iargs
+        if self.layers > 1:
+          # Get interfacial points
+          Lx = np.zeros(self.layers+1)
+          Lx[1:] += np.cumsum(self.L)
+          iargsall = {}
+          p = np.zeros(len(C)-self.layers+1)
+          xp = np.unique(x)
+          iargsold = [0,0]
+          for i,j in enumerate(Lx[1:-1]):
+            iargs = np.argwhere(np.isclose(x,j,atol=1e-14,rtol=1e-14)).flatten()
+            iargsall[i] = iargs
 
-          # Get interfacial pressure and swap points if not matching
-          Cint = C[iargs]
-          pint = Cint/self.S[i:i+2]
-          if not np.isclose(pint[0],pint[1],atol=1e-8,rtol=1e-5):
-            x[iargs[0]], x[iargs[1]] = x[iargs[1]], x[iargs[0]]
-            C[iargs[0]], C[iargs[1]] = C[iargs[1]], C[iargs[0]]
+            # Get interfacial pressure and swap points if not matching
+            Cint = C[iargs]
+            pint = Cint/self.S[i:i+2]
+            if not np.isclose(pint[0],pint[1],atol=1e-8,rtol=1e-5):
+              x[iargs[0]], x[iargs[1]] = x[iargs[1]], x[iargs[0]]
+              C[iargs[0]], C[iargs[1]] = C[iargs[1]], C[iargs[0]]
 
-          # Calculate final pressure array
-          p[iargsold[1]-i:iargs[1]-i] = C[iargsold[1]:iargs[1]]/mdiv(self.S[i])
-          iargsold = iargs
-        p[iargsold[1]-(i+1):] = C[iargsold[1]:]/mdiv(self.S[-1])
-      else:
-        xp = x
-        p = C/self.S[0]
+            # Calculate final pressure array
+            p[iargsold[1]-i:iargs[1]-i] = C[iargsold[1]:iargs[1]]/mdiv(self.S[i])
+            iargsold = iargs
+          p[iargsold[1]-(i+1):] = C[iargsold[1]:]/mdiv(self.S[-1])
+        else:
+          xp = x
+          p = C/self.S[0]
 
 
-      #TODO Plot either concentration or pressure
-      if y == 'C':
-        plt.plot(x,C,label=f"{self.field[frame]['t']:0.3f} s")
-      else:
-        plt.plot(xp,p,label=f"{self.field[frame]['t']:0.3f} s")
+        #TODO Plot either concentration or pressure
+        if plotlabels is None or plotlabels[frame] is None:
+          label = f"{self.field[frame]['t']:0.3f} s"
+        else:
+          label = plotlabels[frame]
+        if y == 'C':
+          plt.plot(x,C,label=label)
+        else:
+          plt.plot(xp,p,label=label)
 
     # Finalise plotting
     plt.legend()
@@ -304,7 +313,8 @@ class planar:
                 self.xy[label] = np.append(self.xy[label],float(entries[i]))
 
   # Linear algebra steady state solution
-  def steady_state(self,y='C',plot=False,showplot=True):
+  def steady_state(self,y='C',plot=False,showplot=True,\
+      plotlabel='steady-state'):
 
     # Get linear coefficients relating pressure to molar flux
     k = self.P/mdiv(self.L)
@@ -372,10 +382,10 @@ class planar:
     # Optionally plot
     if plot:
       if y == 'C':
-        plt.plot(xc,C,label='steady-state')
+        plt.plot(xc,C,'-x',label=plotlabel)
         plt.ylabel(r'$C$ [mol$m^{-3}$]')
       else:
-        plt.plot(x,p,label='steady-state')
+        plt.plot(x,p,'-x',label=plotlabel)
         plt.ylabel(r'$p$ [Pa]')
       plt.xlabel(r'$x$ [$m$]')
       if showplot:
