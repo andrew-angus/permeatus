@@ -123,9 +123,9 @@ for i in range(nlayer):
 perm.rootAssembly.generateMesh(regions=(instance, ))
 
 # Mass diffusion step
-minInc = 1.05*maxele**2/(6*min(D))
-maxInc = max(minInc,tstep) 
-initInc = min(maxInc,tstep)
+minInc = 1.01*maxele**2/(6*min(D))
+maxInc = max(1.01*minInc,tstep) 
+initInc = max(min(maxInc*0.99,tstep),minInc*1.001)
 perm.MassDiffusionStep(dcmax=C0, end=0.0, initialInc=initInc, \
     maxInc=maxInc, minInc=minInc, name='diffusion', previous='Initial', \
     timePeriod=touts[-1], maxNumInc=int(touts[-1]/minInc)+1)
