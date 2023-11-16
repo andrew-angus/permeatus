@@ -17,6 +17,7 @@ from abaqus import *
 from abaqusConstants import *
 
 # Variable parameters
+r = 0.2
 L = [0.5,0.5]
 D = [1.0,0.1]
 S = [1.0,1.1]
@@ -41,20 +42,36 @@ session.viewports['viewport'].maximize()
 perm = mdb.Model(name='perm')
 
 # Define rectangular sketch instance
-sketch = perm.ConstrainedSketch(name='sketch',sheetSize=2.1*totL)
-sketch.rectangle(point1=(0.0,1.0),point2=(totL,0.0))
+ticker = 0.0
+for i in range(nlayer):
+  sketch = perm.ConstrainedSketch(name='sketch',sheetSize=max(2.1*totL,1.1*r))
+  sketch.rectangle(point1=(0.0,ticker),point2=(r,ticker+L[i]))
 
-# Define 2D shell part using sketch
-part = perm.Part(dimensionality=TWO_D_PLANAR, name='part', type=DEFORMABLE_BODY)
-part.BaseShell(sketch=sketch)
+  # Define 2D shell part using sketch
+  perm.Part(dimensionality=TWO_D_PLANAR, name='part'+str(i), type=DEFORMABLE_BODY)
+  perm.parts['part'+str(i)].BaseShell(sketch=sketch)
+  ticker += L[i]
+
+# Create assembly of part instances
+instances = []
+for i in range(nlayer):
+  instance = perm.rootAssembly.Instance(dependent=OFF, name='part'+str(i)+str(i), 
+      part=perm.parts['part'+str(i)])
+  instances.append(instance)
+
+# Merge all instances into new part
+perm.rootAssembly.InstanceFromBooleanMerge(domain=GEOMETRY, 
+    instances=tuple(instances[i] for i in range(nlayer)), 
+    keepIntersections=ON, name='part'+str(nlayer), originalInstances=SUPPRESS)
+part = perm.parts['part'+str(nlayer)]
 
 # Partition into distinct layers
-ticker = 0.0
-for i in range(nlayer-1):
-  ticker += L[i]
-  part.PartitionFaceByShortestPath(faces= \
-      part.faces.findAt(((ticker,0.5,0.0), ), ), \
-      point1=(ticker,0.0,0.0), point2=(ticker,1.0,0.0))
+#ticker = 0.0
+#for i in range(nlayer-1):
+#  ticker += L[i]
+#  part.PartitionFaceByShortestPath(faces= \
+#      part.faces.findAt(((ticker,0.5,0.0), ), ), \
+#      point1=(ticker,0.0,0.0), point2=(ticker,1.0,0.0))
 
 # Define and assign layer properties
 ticker = 0.0
@@ -69,12 +86,16 @@ for i in range(nlayer):
   ticker += L[i]
   midlayer = ticker - L[i]/2
   perm.HomogeneousSolidSection(material='layer'+str(i), name='layer'+str(i),thickness=None)
-  setlayer = part.Set(faces=part.faces.findAt(((midlayer,0.5,0.0), ), ), name='layer'+str(i))
+  setlayer = part.Set(faces=part.faces.findAt(((r/2,midlayer,0.0), ), ), name='layer'+str(i))
   part.SectionAssignment(offset=0.0,offsetField='',offsetType=MIDDLE_SURFACE, \
       region=setlayer,sectionName='layer'+str(i),thicknessAssignment=FROM_SECTION)
 
-# Define assembly
-instance = perm.rootAssembly.Instance(dependent=OFF, name='instance', part=part)
+# Redefine assembly
+perm.rootAssembly.regenerate()
+perm.rootAssembly.makeIndependent(instances=(
+    perm.rootAssembly.instances['part'+str(nlayer)+'-1'], ))
+instance = perm.rootAssembly.instances['part'+str(nlayer)+'-1']
+#instance = perm.rootAssembly.Instance(dependent=OFF, name='instance', part=part)
 
 # Mesh initialisation
 face = []
@@ -83,7 +104,7 @@ for i in range(nlayer):
   # Get face of layer
   ticker += L[i]
   midlayer = ticker - L[i]/2
-  face.append(instance.faces.findAt(((midlayer,0.5,0.0), ), ))
+  face.append(instance.faces.findAt(((r/2,midlayer,0.0), ), ))
 
   # Set mesh controls
   perm.rootAssembly.setMeshControls(elemShape=QUAD, regions=face[i], \
@@ -97,9 +118,9 @@ perm.rootAssembly.setElementType(elemTypes=(ElemType( \
 # Seed mesh edges and generate
 # Left and right boundaries
 perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, edges= \
-    instance.edges.findAt(((0.0,0.5,0.0), ), ), number=1)
+    instance.edges.findAt(((r/2,0.0,0.0), ), ), number=1)
 perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, edges= \
-    instance.edges.findAt(((totL,0.5,0.0), ), ), number=1)
+    instance.edges.findAt(((r/2,totL,0.0), ), ), number=1)
 
 # Seed upper and lower edges for each layer
 ticker = 0.0
@@ -108,10 +129,10 @@ for i in range(nlayer):
   ticker += L[i]
   midlayer = ticker - L[i]/2
   perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, \
-      edges= instance.edges.findAt(((midlayer,1.0,0.0), ), ), \
+      edges= instance.edges.findAt(((r,midlayer,0.0), ), ), \
       number=N[i])
   perm.rootAssembly.seedEdgeByNumber(constraint=FIXED, \
-      edges= instance.edges.findAt(((midlayer,0.0,0.0), ), ), \
+      edges= instance.edges.findAt(((0.0,midlayer,0.0), ), ), \
       number=N[i])
 
   # Track maximum element size in x-direction
@@ -132,9 +153,9 @@ perm.MassDiffusionStep(dcmax=C0, end=0.0, initialInc=initInc, \
 
 # Concentration BCs
 perm.rootAssembly.Set(edges= \
-    instance.edges.findAt(((0.0,0.5,0.0), ), ), name='left')
+    instance.edges.findAt(((r/2,0.0,0.0), ), ), name='left')
 perm.rootAssembly.Set(edges= \
-    instance.edges.findAt(((totL,0.5,0.0), ), ), name='right')
+    instance.edges.findAt(((r/2,totL,0.0), ), ), name='right')
 perm.ConcentrationBC(amplitude=UNSET, createStepName=
     'diffusion', distributionType=UNIFORM, fieldName='', fixed=OFF, magnitude=
     C0, name='source', region=perm.rootAssembly.sets['left'])
