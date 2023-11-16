@@ -30,3 +30,8 @@ __pycache__
 *.pgf
 test.pickle
 abaqus.rpt
+*.env
+*.SMABulk
+*.cid
+*.simdir
+*.simlog

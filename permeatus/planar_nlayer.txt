@@ -60,18 +60,13 @@ for i in range(nlayer):
   instances.append(instance)
 
 # Merge all instances into new part
-perm.rootAssembly.InstanceFromBooleanMerge(domain=GEOMETRY, 
-    instances=tuple(instances[i] for i in range(nlayer)), 
-    keepIntersections=ON, name='part'+str(nlayer), originalInstances=SUPPRESS)
-part = perm.parts['part'+str(nlayer)]
-
-# Partition into distinct layers
-#ticker = 0.0
-#for i in range(nlayer-1):
-#  ticker += L[i]
-#  part.PartitionFaceByShortestPath(faces= \
-#      part.faces.findAt(((ticker,0.5,0.0), ), ), \
-#      point1=(ticker,0.0,0.0), point2=(ticker,1.0,0.0))
+if nlayer > 1:
+  perm.rootAssembly.InstanceFromBooleanMerge(domain=GEOMETRY, 
+      instances=tuple(instances[i] for i in range(nlayer)), 
+      keepIntersections=ON, name='part'+str(nlayer), originalInstances=SUPPRESS)
+  part = perm.parts['part'+str(nlayer)]
+else:
+  part = perm.parts['part0']
 
 # Define and assign layer properties
 ticker = 0.0
@@ -91,10 +86,13 @@ for i in range(nlayer):
       region=setlayer,sectionName='layer'+str(i),thicknessAssignment=FROM_SECTION)
 
 # Redefine assembly
-perm.rootAssembly.regenerate()
-perm.rootAssembly.makeIndependent(instances=(
-    perm.rootAssembly.instances['part'+str(nlayer)+'-1'], ))
-instance = perm.rootAssembly.instances['part'+str(nlayer)+'-1']
+if nlayer > 1:
+  perm.rootAssembly.regenerate()
+  perm.rootAssembly.makeIndependent(instances=(
+      perm.rootAssembly.instances['part'+str(nlayer)+'-1'], ))
+  instance = perm.rootAssembly.instances['part'+str(nlayer)+'-1']
+else:
+  instance = perm.rootAssembly.instances['part00']
 #instance = perm.rootAssembly.Instance(dependent=OFF, name='instance', part=part)
 
 # Mesh initialisation
