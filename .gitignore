@@ -23,3 +23,10 @@ __pycache__
 *.cae
 *.exception
 *.tmp
+*.csv
+*.lck
+*.pdf
+*.png
+*.pgf
+test.pickle
+abaqus.rpt
