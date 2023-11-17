@@ -93,7 +93,6 @@ if nlayer > 1:
   instance = perm.rootAssembly.instances['part'+str(nlayer)+'-1']
 else:
   instance = perm.rootAssembly.instances['part00']
-#instance = perm.rootAssembly.Instance(dependent=OFF, name='instance', part=part)
 
 # Mesh initialisation
 face = []
@@ -189,9 +188,12 @@ odb = session.odbs['./sim.odb']
 
 # Write concentration field report to csv file
 session.fieldReportOptions.setValues(reportFormat=COMMA_SEPARATED_VALUES)
-session.writeFieldReport(fileName='CONC.csv', append=OFF,
+session.writeFieldReport(fileName='C.csv', append=OFF,
     sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=NODAL,
     variable=(('CONC', ELEMENT_NODAL), ), stepFrame=ALL)
+session.writeFieldReport(fileName='J.csv', append=OFF,
+    sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=NODAL,
+    variable=(('MFL', ELEMENT_NODAL), ), stepFrame=ALL)
 
 # Save model
 mdb.saveAs(pathName='./model')

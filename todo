@@ -1,3 +1,10 @@
 separate treatment of pressure-based or concentration-based simulations
-discrepancy in steady-state and abaqus single-layer solution
 convert list arguments to numpy arrays in __init__
+argument checking
+have desired fields as inputs to class, propagated throughout
+have target directory as class input
+arc geometry class
+3d flat coupon class
+3d curved coupon class - wait on shape confirmation
+handling of tensorial field quantities
+pickle file interface with abaqus - add as optional class input instead of csv

@@ -54,7 +54,10 @@ class planar:
     self.AR = AR
     self.model = model
 
-    # Initialise calculated attributes
+    # Initialise derivative attributes
+    if self.touts is not None:
+      self.frames = len(self.touts)+1
+    self.field = {}
     self.J = None
     self.p = None
     self.C = None
@@ -160,7 +163,8 @@ class planar:
 
     # Remove output file to prevent appending to existing file
     try:
-      os.system('rm CONC.csv')
+      os.system('rm C.csv')
+      os.system('rm J.csv')
     except:
       pass
 
@@ -169,16 +173,29 @@ class planar:
     os.system('abaqus cae noGui=abaqus_script.py')
     print('DONE')
 
-  # Read field data output to csv file from abaqus
-  def read_field(self,target='CONC',targetdir=None):
+  # Read field data output from abaqus csv file
+  #TODO vector/tensor field reading
+  def read_field(self,target='C',targetdir=None):
 
-    # Initialise data dict and labels logical
-    self.field = {}
-    labels = True
+    # Target check
+    targets = ['C','J']
+    if target not in targets:
+      raise Exception(f'target must be one of {targets}')
+
+    # Initialise field-specific information
+    self.field[target] = [None for i in range(self.frames)]
+    field = self.field[target]
+    if target == 'C':
+      fieldkeys = ['CONC']
+      fieldsize = 1
+    elif target == 'J':
+      fieldsize = 2
+      fieldkeys = ['MFL-MFL1','MFL-MFL2']
 
     # Read into dictionary with csv module
     inc = -1; incc = -1
     fname = f'{target}.csv'
+    labels = True
     if targetdir is not None:
       fname = os.path.join(targetdir,fname)
     with open(fname, newline='') as f:
@@ -188,7 +205,7 @@ class planar:
         row = {i.strip():j for i,j in zip(row.keys(),row.values())}
 
         # Only store keys of interest
-        keys = ['Frame','X','Y','CONC']
+        keys = ['Frame','X','Y']+fieldkeys
         row = {i:row[i] for i in keys}
 
         # Split frame into increment and time and extract values
@@ -199,32 +216,34 @@ class planar:
         # Check for new increment and initialise data dict
         if increment != inc:
           incc += 1
-          self.field[incc] = {'t':time,'x':np.array([float(row['X'])]),\
-              'y':np.array([float(row['Y'])]), 'C':np.array([float(row['CONC'])])}
+          field[incc] = {'t':time,'x':np.array([float(row['X'])]),\
+              'y':np.array([float(row['Y'])]), \
+              'data':np.array([[float(row[fieldkey]) for fieldkey in fieldkeys]])}
           inc = increment
 
         # Else append data
         else:
-          self.field[incc]['x'] = np.r_[self.field[incc]['x'],float(row['X'])]
-          self.field[incc]['y'] = np.r_[self.field[incc]['y'],float(row['Y'])]
-          self.field[incc]['C'] = np.r_[self.field[incc]['C'],float(row['CONC'])]
+          field[incc]['x'] = np.r_[field[incc]['x'],float(row['X'])]
+          field[incc]['y'] = np.r_[field[incc]['y'],float(row['Y'])]
+          field[incc]['data'] = np.r_[field[incc]['data'],\
+              np.array([[float(row[fieldkey]) for fieldkey in fieldkeys]])]
 
     # Store number of frames
-    self.field['frames'] = incc+1
+    #self.field['frames'] = incc+1
 
   # Plot 1D solution
   def plot_1d(self,target='C',showplot=True,timemask=None,plotlabels=None):
 
     if timemask is None:
-      timemask = [True for i in range(len(self.touts)+1)]
+      timemask = [True for i in range(self.frames)]
 
     # Loop through frames
-    for frame in range(1,self.field['frames']):
+    for frame in range(1,self.frames):
       if timemask[frame]:
         # Identify path along part centreline in y-direction
-        pathargs = np.ravel(np.argwhere(self.field[frame]['x'] < 1e-10))
-        y = self.field[frame]['y'][pathargs]
-        C = self.field[frame]['C'][pathargs]
+        pathargs = np.ravel(np.argwhere(self.field['C'][frame]['x'] < 1e-10))
+        y = self.field['C'][frame]['y'][pathargs]
+        C = self.field['C'][frame]['data'][pathargs,0]
 
         # Sort by x-coordinate
         ysort = np.argsort(y)
@@ -262,7 +281,7 @@ class planar:
 
         #TODO Plot either concentration or pressure
         if plotlabels is None or plotlabels[frame] is None:
-          label = f"{self.field[frame]['t']:0.3f} s"
+          label = f"{self.field['C'][frame]['t']:0.3f} s"
         else:
           label = plotlabels[frame]
         if target == 'C':
@@ -405,9 +424,16 @@ class planar:
     else:
       return x, p, J
 
-  #TODO extract molar flux from gradient of abaqus solution
-  def get_molar_flux(self):
-    pass
+  # Calculate average steady state molar flux and store result
+  def get_molar_flux(self,method='abaqus'):
+
+    # Either calculate average of abaqus data or use steady-state 1D FEA
+    if method == 'abaqus':
+      if self.field is None:
+        self.read_field('J')
+      self.J = np.mean(self.field['J'][-1]['data'][:,1])
+    elif method == 'steady-state':
+      scrap,scrap,self.J = self.steady_state()
 
   #TODO calculate mass diffusion
   def get_mass_diffusion(self):
@@ -430,8 +456,8 @@ class planar:
       self.D_lower = 1/mdiv(Vc_frac/mdiv(self.Dc)+self.Vd_frac/mdiv(self.Dd))
       self.S_lower = 1/mdiv(Vc_frac/mdiv(self.Sc)+self.Vd_frac/mdiv(self.Sd))
 
-    # Hashin and Strikman bounds, tighter than Wiener assuming structural isotropy
-    elif method == 'HAS':
+    # Hashin-Strikman bounds, tighter than Wiener assuming structural isotropy
+    elif method == 'HS':
       self.P_upper = np.zeros(self.layers)
       self.D_upper = np.zeros(self.layers)
       self.S_upper = np.zeros(self.layers)
