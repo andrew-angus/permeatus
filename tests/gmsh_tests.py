@@ -4,17 +4,92 @@
 """
 
 # %%
+# Abaqus diffusion sim input file production
+#TODO add variable inputs for material properties, timepoints, and BC magnitudes (best integrating with permeatus)
+def write_abaqus_diffusion(sourcenodes,sinknodes,fname="gmsh.inp"):
+    # Replace element types with diffusion
+    gmsh.write(fname)
+    with fi.input(fname,inplace=True) as f:
+        for line in f:
+            print(line.replace("CPS","DC2D"), end='')
+    
+    # Append BC's, Diffusion step details, Material properties and section assignment
+    with open(fname,"a") as f:
+        # Define boundary node sets
+        f.write('*NSET, NSET=source \n')
+        ticker = 1
+        for j in sourcenodes:
+            if ticker == 10 or ticker == len(sourcenodes):
+                f.write(f'{j},\n')
+                ticker = 1
+            else:
+                f.write(f'{j}, ')
+                ticker += 1
+        f.write('*NSET, NSET=sink \n')
+        ticker = 1
+        for j in sinknodes:
+            if ticker == 10 or ticker == len(sinknodes):
+                f.write(f'{j},\n')
+                ticker = 1
+            else:
+                f.write(f'{j}, ')
+                ticker += 1
+    
+        # Define materials
+        f.write(f'*Material, name=layer0\n')
+        f.write(f'*Diffusivity, law=FICK\n')
+        f.write(f'1.,0.\n')
+        f.write(f'*Solubility\n')
+        f.write(f'1.,\n')
+        f.write(f'*Material, name=layer1\n')
+        f.write(f'*Diffusivity, law=FICK\n')
+        f.write(f'0.1,0.\n')
+        f.write(f'*Solubility\n')
+        f.write(f'1.1,\n')
+    
+        # Assign material sections
+        f.write(f'*Solid Section, elset=layer0, material=layer0\n')
+        f.write(f'*Solid Section, elset=layer1, material=layer1\n')
+    
+        # Time points
+        f.write(f'*Time Points, name=timepoints\n')
+        f.write(f'0.001, 0.05, 0.2, 2.\n')
+    
+        # Zero temperature
+        f.write(f'*Physical Constants, absolute zero=0.\n')
+    
+        # Diffusion step details
+        f.write(f'*Step, name=diffusion, nlgeom=NO, inc=200000\n')
+        f.write(f'*Mass Diffusion, end=PERIOD, dcmax=1.\n')
+        f.write(f'0.001, 2., 0.000175, 0.001,\n')
+        f.write(f'*Boundary\n')
+        f.write(f'sink, 11, 11\n')
+        f.write(f'*Boundary\n')
+        f.write(f'source, 11, 11, 1.\n')
+        f.write(f'*Restart, write, frequency=0\n')
+        f.write(f'*Output, field, time points=timepoints\n')
+        f.write(f'*Element Output, position=NODES, directions=YES\n')
+        f.write(f'CONC, MFL\n')
+        f.write(f'*End Step\n')
+    
+    # Check
+    #with open(fname,"r") as f:
+    #    print(f.read())
+
+# %%
 import gmsh
 import sys
 import fileinput as fi
 
+# Initialise
 gmsh.initialize()
+gmsh.model.add("gmsh")
 
-gmsh.model.add("t1")
-
+# Output both element and node groups
 gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
 
+# Geometry points
 width = 1.0/80
 gmsh.model.geo.addPoint(0, 0, 0, tag=1,meshSize=width)
 gmsh.model.geo.addPoint(width*10, 0, 0, tag=2)#,meshSize=width)
@@ -23,22 +98,24 @@ gmsh.model.geo.addPoint(0, .5, 0, tag=4)#,meshSize=width)
 gmsh.model.geo.addPoint(width*10, 1.0, 0, tag=5)#,meshSize=width)
 gmsh.model.geo.addPoint(.0, 1.0, 0, tag=6)#,meshSize=width)
 
+# Lines
 gmsh.model.geo.addLine(1, 2, 1)
 gmsh.model.geo.addLine(2, 3, 2)
 gmsh.model.geo.addLine(3, 4, 3)
 gmsh.model.geo.addLine(4, 1, 4)
-
 gmsh.model.geo.addLine(3, 5, 5)
 gmsh.model.geo.addLine(5, 6, 6)
 gmsh.model.geo.addLine(6, 4, 7)
 
-# Need to both be anti-clockwise, or both clockwise
+# Curve loops - Need to both be anti-clockwise, or both clockwise
 gmsh.model.geo.addCurveLoop([1, 2, 3, 4], 1)
 gmsh.model.geo.addCurveLoop([-3, 5, 6, 7], 2)
 
+# Add surfacets
 gmsh.model.geo.addPlaneSurface([1], 1)
 gmsh.model.geo.addPlaneSurface([2], 2)
 
+# Define structured mesh with seeded edges
 gmsh.model.geo.mesh.setTransfiniteCurve(1, 2, "Progression", 1.0)
 gmsh.model.geo.mesh.setTransfiniteCurve(6, 2)
 gmsh.model.geo.mesh.setTransfiniteCurve(3, 2)
@@ -49,116 +126,40 @@ gmsh.model.geo.mesh.setTransfiniteCurve(7, 40)
 gmsh.model.geo.mesh.setTransfiniteSurface(1)
 gmsh.model.geo.mesh.setTransfiniteSurface(2)
 
+# Finalise geometry
 gmsh.model.geo.synchronize()
 
-# gmsh.model.addPhysicalGroup(1, [1, 2, 4], 5)
-#gmsh.model.addPhysicalGroup(1, [1], name="source")
-#gmsh.model.addPhysicalGroup(1, [6], name="sink")
+# Define physical groups
 gmsh.model.addPhysicalGroup(2, [1], name="layer0")
 gmsh.model.addPhysicalGroup(2, [2], name="layer1")
 
-# We can then generate a 2D mesh...
-#print(gmsh.option.getNumber("Mesh.MeshSizeMin"))
+# Generate mesh
 #gmsh.option.setNumber("Mesh.MeshSizeMin",width)
-#print(gmsh.option.getNumber("Mesh.MeshSizeMin"))
-#print(gmsh.option.getNumber("Mesh.MeshSizeMax"))
 #gmsh.option.setNumber("Mesh.MeshSizeMax",width)
-#print(gmsh.option.getNumber("Mesh.MeshSizeMax"))
-#gmsh.model.mesh.setSizeAtParametricPoints(2,1,[0.0,0.0,width,0.0],[0.01])
-#gmsh.model.mesh.setSizeAtParametricPoints(2,2,[0.width.0,width,1.0],[0.01])
-#gmsh.model.mesh.setAlgorithm(2,1,8)
 #gmsh.model.mesh.setAlgorithm(2,2,8)
-#gmsh.model.mesh.setSizeAtParametricPoints(2,1,[width,0.0],[0.01])
-#gmsh.model.mesh.embed(0,[7],2,1)
-#gmsh.model.mesh.embed(1,[1],2,1)
-#gmsh.model.mesh.embed(0,[7,8],2,1)
-#gmsh.model.geo.addLine(7, 8, 8)
-#gmsh.model.geo.synchronize()
-#gmsh.model.mesh.embed(1,[8],2,1)
 gmsh.model.mesh.generate(2)
 gmsh.model.mesh.recombine()
 
-gmsh.fltk.run()
-
+# Obtain source and sink nodes
 sourcenodes = gmsh.model.mesh.getElements(1,1)[-1][0]
 sinknodes = gmsh.model.mesh.getElements(1,6)[-1][0]
 #print(gmsh.model.mesh.getElements())
 
-gmsh.write("gmsh.inp")
+# Save for opening in gmsh
+gmsh.write("gmsh2layer.msh")
 
-# Replace element types with diffusion
-with fi.input("gmsh.inp",inplace=True) as f:
-    for line in f:
-        print(line.replace("CPS4","DC2D4"), end='')
+# Save for running ABAQUS sim
+write_abaqus_diffusion(sourcenodes,sinknodes)
 
-# Append BC's, Diffusion step details, Material properties and section assignment
-with open("gmsh.inp","a") as f:
-    # Define boundary node sets
-    f.write('*NSET, NSET=source \n')
-    ticker = 1
-    for j in sourcenodes:
-        if ticker == 10 or ticker == len(sourcenodes):
-            f.write(f'{j},\n')
-            ticker = 1
-        else:
-            f.write(f'{j}, ')
-            ticker += 1
-    f.write('*NSET, NSET=sink \n')
-    ticker = 1
-    for j in sinknodes:
-        if ticker == 10 or ticker == len(sinknodes):
-            f.write(f'{j},\n')
-            ticker = 1
-        else:
-            f.write(f'{j}, ')
-            ticker += 1
+# Visualise
+gmsh.fltk.run()
 
-    # Define materials
-    f.write(f'*Material, name=layer0\n')
-    f.write(f'*Diffusivity, law=FICK\n')
-    f.write(f'1.,0.\n')
-    f.write(f'*Solubility\n')
-    f.write(f'1.,\n')
-    f.write(f'*Material, name=layer1\n')
-    f.write(f'*Diffusivity, law=FICK\n')
-    f.write(f'0.1,0.\n')
-    f.write(f'*Solubility\n')
-    f.write(f'1.1,\n')
-
-    # Assign material sections
-    f.write(f'*Solid Section, elset=layer0, material=layer0\n')
-    f.write(f'*Solid Section, elset=layer1, material=layer1\n')
-
-    # Time points
-    f.write(f'*Time Points, name=timepoints\n')
-    f.write(f'0.001, 0.05, 0.2, 2.\n')
-
-    # Zero temperature
-    f.write(f'*Physical Constants, absolute zero=0.\n')
-
-    # Diffusion step details
-    f.write(f'*Step, name=diffusion, nlgeom=NO, inc=200000\n')
-    f.write(f'*Mass Diffusion, end=PERIOD, dcmax=1.\n')
-    f.write(f'0.001, 2., 0.000175, 0.001,\n')
-    f.write(f'*Boundary\n')
-    f.write(f'sink, 11, 11\n')
-    f.write(f'*Boundary\n')
-    f.write(f'source, 11, 11, 1.\n')
-    f.write(f'*Restart, write, frequency=0\n')
-    f.write(f'*Output, field, time points=timepoints\n')
-    f.write(f'*Element Output, position=NODES, directions=YES\n')
-    f.write(f'CONC, MFL\n')
-    f.write(f'*End Step\n')
-
-# Check
-with open("gmsh.inp","r") as f:
-    print(f.read())
-
+# Finalise
 gmsh.finalize()
 
 # %%
 """
-# RVE
+# Box with one central hole
 """
 
 # %%
@@ -188,9 +189,6 @@ gmsh.model.geo.addLine(4, 1, 4)
 
 gmsh.model.geo.addCurveLoop([1, 2, 3, 4], 1)
 
-# Random circle insertion
-vfrac = 0.5
-
 # Add 1 central circle to start with
 r = 0.1
 gmsh.model.geo.addPoint(boxsize/2, boxsize/2, 0, tag=5) # Centre
@@ -207,100 +205,244 @@ gmsh.model.geo.addCurveLoop([5,6,7,8], 2)
 gmsh.model.geo.addPlaneSurface([1,2], 1) # Box with hole
 gmsh.model.geo.addPlaneSurface([2], 2) # Circle
 
-
-# Mesh
-"""
-gmsh.model.geo.mesh.setTransfiniteCurve(1, 2, "Progression", 1.0)
-gmsh.model.geo.mesh.setTransfiniteCurve(6, 2)
-gmsh.model.geo.mesh.setTransfiniteCurve(3, 2)
-gmsh.model.geo.mesh.setTransfiniteCurve(2, 40)
-gmsh.model.geo.mesh.setTransfiniteCurve(4, 40)
-gmsh.model.geo.mesh.setTransfiniteCurve(5, 40)
-gmsh.model.geo.mesh.setTransfiniteCurve(7, 40)
-gmsh.model.geo.mesh.setTransfiniteSurface(1)
-gmsh.model.geo.mesh.setTransfiniteSurface(2)
-"""
-
 gmsh.model.geo.synchronize()
 
-gmsh.model.addPhysicalGroup(2, [1], name="organic")
-gmsh.model.addPhysicalGroup(2, [2], name="inorganic")
+gmsh.model.addPhysicalGroup(2, [1], name="layer0")
+gmsh.model.addPhysicalGroup(2, [2], name="layer1")
 
 # We can then generate a 2D mesh...
 gmsh.model.mesh.generate(2)
-#gmsh.model.mesh.recombine()
 
-gmsh.fltk.run()
 
 sourcenodes = np.unique(gmsh.model.mesh.getElements(1,1)[-1][0])
 sinknodes = np.unique(gmsh.model.mesh.getElements(1,3)[-1][0])
-#print(gmsh.model.mesh.getElements())
 print(sourcenodes,sinknodes)
 
+gmsh.write("gmshhole.msh")
+write_abaqus_diffusion(sourcenodes,sinknodes)
+gmsh.fltk.run()
+gmsh.finalize()
+
+# %%
+"""
+# Box with random hole
+"""
+
+# %%
+import gmsh
+import sys
+import fileinput as fi
+import numpy as np
+
+try:
+    gmsh.finalize()
+except:
+    pass
+gmsh.initialize()
+
+gmsh.model.add("random")
+
+gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
+gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
+gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
+
+
+# Bounding box
+boxsize = 1
+gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
+
+# Minimum spacing
+eps = 1e-3
+
+# Add a randomly centred circle
+r = 0.2
+ybuff = r + eps
+while True:
+    c = np.random.rand(2)*np.array([boxsize,boxsize-2*ybuff])
+    c[1] += ybuff
+    if np.abs(c[0]-r) > eps and np.abs(c[0]+r-boxsize) > eps:
+        gmsh.model.occ.addDisk(c[0],c[1],0,r,r,tag=2)
+        break
+
+# Fragment overlapping shapes
+frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 3)])
+boxdimtag = pc[0][0]
+boxtag = boxdimtag[1]
+
+# Translate shapes in left periodic copy and refragment
+eps = 1e-3
+outs = gmsh.model.occ.getEntitiesInBoundingBox(-boxsize-eps,-eps,-eps,eps,boxsize+eps,eps,2)
+gmsh.model.occ.translate(outs,boxsize,0,0)
+# Check if bulk polymer entity has had label changed
+frags, pc = gmsh.model.occ.fragment([(2, boxtag)], [(2, i) for i in range(2, len(frags)+1)])
+boxdimtag = pc[0][0]
+boxtag = boxdimtag[1]
+
+# Translate shapes in right periodic copy and refragment
+outs = gmsh.model.occ.getEntitiesInBoundingBox(boxsize-eps,-eps,-eps,2*boxsize+eps,boxsize+eps,eps,2)
+gmsh.model.occ.translate(outs,-boxsize,0,0)
+# Check if bulk polymer entity has had label changed
+frags, pc = gmsh.model.occ.fragment([(2, boxtag)], [(2, i) for i in range(2, len(frags)+1)])
+boxdimtag = pc[0][0]
+boxtag = boxdimtag[1]
+
+# Synchronise
+gmsh.model.occ.synchronize()
+
+#TODO Need to fix tag references to account for fragmenting
+frags.remove(boxdimtag)
+gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
+gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
+
+# We can then generate a 2D mesh...
+gmsh.model.mesh.generate(2)
+
+gmsh.model.occ.synchronize()
+sourceents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,-eps,-eps,boxsize+eps,eps,eps,1)
+sinkents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,boxsize-eps,-eps,boxsize+eps,boxsize+eps,eps,1)
+print(sourceents)
+print(sinkents)
+sourcenodes = np.unique(gmsh.model.mesh.getElements(1,sourceents[0][1])[-1][0])
+sinknodes = np.unique(gmsh.model.mesh.getElements(1,sinkents[0][1])[-1][0])
+
 gmsh.write("gmsh.inp")
+write_abaqus_diffusion(sourcenodes,sinknodes)
+gmsh.fltk.run()
+gmsh.finalize()
 
-# Replace element types with diffusion
-with fi.input("gmsh.inp",inplace=True) as f:
-    for line in f:
-        print(line.replace("CPS","DC2D"), end='')
+# %%
+"""
+# Box with more random holes
+"""
 
-# Append BC's, Diffusion step details, Material properties and section assignment
-with open("gmsh.inp","a") as f:
-    # Define boundary node sets
-    f.write('*NSET, NSET=source \n')
-    for i,j in enumerate(sourcenodes):
-        if (i+1) % 10 == 0 or i + 1 == len(sourcenodes):
-            f.write(f'{j},\n')
-        else:
-            f.write(f'{j}, ')
-    f.write('*NSET, NSET=sink \n')
-    for i,j in enumerate(sinknodes):
-        if (i+1) % 10 == 0 or i + 1 == len(sinknodes):
-            f.write(f'{j},\n')
-        else:
-            f.write(f'{j}, ')
+# %%
+import gmsh
+import sys
+import fileinput as fi
+import numpy as np
 
-    # Define materials
-    f.write(f'*Material, name=organic\n')
-    f.write(f'*Diffusivity, law=FICK\n')
-    f.write(f'1.,0.\n')
-    f.write(f'*Solubility\n')
-    f.write(f'1.,\n')
-    f.write(f'*Material, name=inorganic\n')
-    f.write(f'*Diffusivity, law=FICK\n')
-    f.write(f'0.1,0.\n')
-    f.write(f'*Solubility\n')
-    f.write(f'1.1,\n')
+try:
+    gmsh.finalize()
+except:
+    pass
+gmsh.initialize()
 
-    # Assign material sections
-    f.write(f'*Solid Section, elset=organic, material=organic\n')
-    f.write(f'*Solid Section, elset=inorganic, material=inorganic\n')
+gmsh.model.add("random")
 
-    # Time points
-    f.write(f'*Time Points, name=timepoints\n')
-    f.write(f'0.001, 0.05, 0.2, 2.\n')
+gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
+gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
+gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
 
-    # Zero temperature
-    f.write(f'*Physical Constants, absolute zero=0.\n')
 
-    # Diffusion step details
-    f.write(f'*Step, name=diffusion, nlgeom=NO, inc=200000\n')
-    f.write(f'*Mass Diffusion, end=PERIOD, dcmax=1.\n')
-    f.write(f'0.001, 2., 0.000175, 0.001,\n')
-    f.write(f'*Boundary\n')
-    f.write(f'sink, 11, 11\n')
-    f.write(f'*Boundary\n')
-    f.write(f'source, 11, 11, 1.\n')
-    f.write(f'*Restart, write, frequency=0\n')
-    f.write(f'*Output, field, time points=timepoints\n')
-    f.write(f'*Element Output, position=NODES, directions=YES\n')
-    f.write(f'CONC, MFL\n')
-    f.write(f'*End Step\n')
+# Bounding box
+boxsize = 1
+gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
 
-# Check
-with open("gmsh.inp","r") as f:
-    print(f.read())
+# Minimum spacing
+eps = 1e-3
 
+# Add a randomly centred circle
+nc = 4
+r = 0.2
+ybuff = r + eps
+cbuff = 2*r + eps
+centers = np.empty((0,2))
+print(cbuff)
+# Loop over number of desired circles
+for i in range(nc):
+
+    # Continually try and insert circle within contstraints
+    niter = 0
+    reject = True
+    while niter < 1000 and reject:
+
+        # Randomly draw circle center
+        c = np.random.rand(1,2)*np.array([[boxsize,boxsize-2*ybuff]])
+        c[0,1] += ybuff
+        print(i,niter,c,np.abs(c[0,0]-r),np.abs(c[0,0]+r-boxsize))
+        
+        # For first circle just check minimum distance from x-bounds
+        if np.abs(c[0,0]-r) > eps and np.abs(c[0,0]+r-boxsize) > eps:
+            if i == 0:
+                reject = False
+                        
+            # Afterwards check against distance between previous circles
+            else:
+                reject = False
+                for center in centers:
+                    dist = np.linalg.norm(c[0]-center)
+                    translator = np.array([boxsize,0.0])
+                    ldist = np.linalg.norm(c[0]-translator-center)
+                    rdist = np.linalg.norm(c[0]+translator-center)
+                    mindist = np.min([dist,ldist,rdist])
+                    print('centering',center,c[0],dist,ldist,rdist)
+                    if mindist < cbuff:
+                        reject = True
+        niter += 1
+
+    # Add accepted circle
+    centers = np.r_[centers,c]
+    gmsh.model.occ.addDisk(c[0,0],c[0,1],0,r,r,tag=2+i)
+
+# Fragment overlapping shapes
+frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 2+nc)])
+print(frags)
+boxdimtag = pc[0][0]
+boxtag = boxdimtag[1]
+
+# Translate shapes in left periodic copy and refragment
+eps = 1e-3
+outs = gmsh.model.occ.getEntitiesInBoundingBox(-boxsize-eps,-eps,-eps,eps,boxsize+eps,eps,2)
+gmsh.model.occ.translate(outs,boxsize,0,0)
+# Check if bulk polymer entity has had label changed
+ents = gmsh.model.occ.getEntities(2)
+box = [boxdimtag]
+print(ents)
+print(box)
+print(boxdimtag)
+ents.remove(boxdimtag)
+print(ents)
+frags, pc = gmsh.model.occ.fragment(box, ents)
+print(frags)
+boxdimtag = pc[0][0]
+boxtag = boxdimtag[1]
+
+# Translate shapes in right periodic copy and refragment
+outs = gmsh.model.occ.getEntitiesInBoundingBox(boxsize-eps,-eps,-eps,2*boxsize+eps,boxsize+eps,eps,2)
+gmsh.model.occ.translate(outs,-boxsize,0,0)
+# Check if bulk polymer entity has had label changed
+ents = gmsh.model.occ.getEntities(2)
+box = [boxdimtag]
+print(ents)
+print(box)
+ents.remove(boxdimtag)
+frags, pc = gmsh.model.occ.fragment(box, ents)
+print(frags)
+boxdimtag = pc[0][0]
+boxtag = boxdimtag[1]
+
+# Synchronise
+gmsh.model.occ.synchronize()
+
+#TODO Need to fix tag references to account for fragmenting
+frags.remove(boxdimtag)
+gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
+gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
+
+# We can then generate a 2D mesh...
+gmsh.model.mesh.generate(2)
+
+gmsh.model.occ.synchronize()
+sourceents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,-eps,-eps,boxsize+eps,eps,eps,1)
+sinkents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,boxsize-eps,-eps,boxsize+eps,boxsize+eps,eps,1)
+print(sourceents)
+print(sinkents)
+sourcenodes = np.unique(gmsh.model.mesh.getElements(1,sourceents[0][1])[-1][0])
+sinknodes = np.unique(gmsh.model.mesh.getElements(1,sinkents[0][1])[-1][0])
+
+gmsh.write("gmsh.inp")
+write_abaqus_diffusion(sourcenodes,sinknodes)
+gmsh.fltk.run()
 gmsh.finalize()
 
 # %%
