@@ -1,0 +1,63 @@
+
+use pyo3::prelude::*;
+
+#[pymodule]
+fn rust_tools(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(random_insert, m)?)?;
+    Ok(())
+}
+
+#[pyfunction]
+fn random_insert(nc: usize, ybuff: f64, cbuff: f64, 
+                 boxsize: f64, eps: f64) -> PyResult<Vec<Vec<f64>>> {
+
+  // 2D vector of circle centers
+  let centers: Vec<Vec<f64>> = Vec::new();
+
+  // Loop over number of desired circles
+  for i in (0..nc):
+
+      // Loop specific variables
+      let niter = 0;
+      let reject = True;
+      let c: Vec<f64> = Vec::new();
+
+      // Continually try and insert circle within contstraints
+      while reject {
+
+          // Randomly draw circle center
+          c = np.random.rand(1,2)*np.array([[boxsize,boxsize-2*ybuff]])
+          c[0,1] += ybuff
+          
+          // For first circle just check minimum distance from x-bounds
+          if np.abs(c[0,0]-r) > eps and np.abs(c[0,0]+r-boxsize) > eps:
+              if i == 0:
+                  reject = False
+                          
+              // Afterwards check against distance between previous circles
+              else:
+                  reject = False
+                  for center in centers:
+                      dist = np.linalg.norm(c[0]-center)
+                      translator = np.array([boxsize,0.0])
+                      ldist = np.linalg.norm(c[0]-translator-center)
+                      rdist = np.linalg.norm(c[0]+translator-center)
+                      mindist = np.min([dist,ldist,rdist])
+                      if mindist < cbuff:
+                          reject = True
+
+          // Check for excessive iterations
+          niter = niter + 1;
+          if niter > 100000 {
+              println!("Structure generation took too many iterations");
+              return 0;
+          }
+      }
+
+      // Add accepted circle
+      centers.push(c);
+
+  // Return vector of circle centers
+  return centers;
+
+}
