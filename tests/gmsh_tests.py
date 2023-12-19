@@ -4,6 +4,11 @@
 """
 
 # %%
+import gmsh
+import sys
+import fileinput as fi
+import numpy as np
+
 # Abaqus diffusion sim input file production
 #TODO add variable inputs for material properties, timepoints, and BC magnitudes (best integrating with permeatus)
 def write_abaqus_diffusion(sourcenodes,sinknodes,fname="gmsh.inp"):
@@ -77,10 +82,6 @@ def write_abaqus_diffusion(sourcenodes,sinknodes,fname="gmsh.inp"):
     #    print(f.read())
 
 # %%
-import gmsh
-import sys
-import fileinput as fi
-
 # Initialise
 gmsh.initialize()
 gmsh.model.add("gmsh")
@@ -163,11 +164,6 @@ gmsh.finalize()
 """
 
 # %%
-import gmsh
-import sys
-import fileinput as fi
-import numpy as np
-
 gmsh.initialize()
 
 gmsh.model.add("t1")
@@ -229,11 +225,6 @@ gmsh.finalize()
 """
 
 # %%
-import gmsh
-import sys
-import fileinput as fi
-import numpy as np
-
 try:
     gmsh.finalize()
 except:
@@ -298,6 +289,7 @@ gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
 gmsh.model.mesh.generate(2)
 
 gmsh.model.occ.synchronize()
+gmsh.write("gmsh.msh")
 sourceents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,-eps,-eps,boxsize+eps,eps,eps,1)
 sinkents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,boxsize-eps,-eps,boxsize+eps,boxsize+eps,eps,1)
 print(sourceents)
@@ -305,9 +297,9 @@ print(sinkents)
 sourcenodes = np.unique(gmsh.model.mesh.getElements(1,sourceents[0][1])[-1][0])
 sinknodes = np.unique(gmsh.model.mesh.getElements(1,sinkents[0][1])[-1][0])
 
-gmsh.write("gmsh.inp")
+gmsh.write("gmsh.msh")
 write_abaqus_diffusion(sourcenodes,sinknodes)
-gmsh.fltk.run()
+#gmsh.fltk.run()
 gmsh.finalize()
 
 # %%
@@ -316,11 +308,6 @@ gmsh.finalize()
 """
 
 # %%
-import gmsh
-import sys
-import fileinput as fi
-import numpy as np
-
 try:
     gmsh.finalize()
 except:
@@ -333,17 +320,27 @@ gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
 gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
 
+# Microstructure specifications
+minspacefrac = 1e-3
+vfrac = 0.5
+r = 0.03
+area0 = np.pi*r**2
+print(area0)
+nc = 100
+area1 = nc*area0
+print(area1)
+area2 = area1/vfrac
 
 # Bounding box
-boxsize = 1
+boxsize = np.sqrt(area2)
+print(boxsize)
 gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
 
 # Minimum spacing
-eps = 1e-3
+eps = 1e-3*boxsize
+print(eps*boxsize/area2)
 
 # Add a randomly centred circle
-nc = 4
-r = 0.2
 ybuff = r + eps
 cbuff = 2*r + eps
 centers = np.empty((0,2))
@@ -354,12 +351,11 @@ for i in range(nc):
     # Continually try and insert circle within contstraints
     niter = 0
     reject = True
-    while niter < 1000 and reject:
+    while reject:
 
         # Randomly draw circle center
         c = np.random.rand(1,2)*np.array([[boxsize,boxsize-2*ybuff]])
         c[0,1] += ybuff
-        print(i,niter,c,np.abs(c[0,0]-r),np.abs(c[0,0]+r-boxsize))
         
         # For first circle just check minimum distance from x-bounds
         if np.abs(c[0,0]-r) > eps and np.abs(c[0,0]+r-boxsize) > eps:
@@ -375,18 +371,25 @@ for i in range(nc):
                     ldist = np.linalg.norm(c[0]-translator-center)
                     rdist = np.linalg.norm(c[0]+translator-center)
                     mindist = np.min([dist,ldist,rdist])
-                    print('centering',center,c[0],dist,ldist,rdist)
                     if mindist < cbuff:
                         reject = True
         niter += 1
+        if niter > 100000:
+            raise Exception("Structure generation took too many iterations")
 
     # Add accepted circle
+    print(i,c)
     centers = np.r_[centers,c]
     gmsh.model.occ.addDisk(c[0,0],c[0,1],0,r,r,tag=2+i)
 
+centmod = centers.copy()
+centmod *= 2
+centmod[:,0] += 4.0
+centmod[:,1] += 1.6
+print(centmod)
+
 # Fragment overlapping shapes
 frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 2+nc)])
-print(frags)
 boxdimtag = pc[0][0]
 boxtag = boxdimtag[1]
 
@@ -397,13 +400,8 @@ gmsh.model.occ.translate(outs,boxsize,0,0)
 # Check if bulk polymer entity has had label changed
 ents = gmsh.model.occ.getEntities(2)
 box = [boxdimtag]
-print(ents)
-print(box)
-print(boxdimtag)
 ents.remove(boxdimtag)
-print(ents)
 frags, pc = gmsh.model.occ.fragment(box, ents)
-print(frags)
 boxdimtag = pc[0][0]
 boxtag = boxdimtag[1]
 
@@ -413,11 +411,8 @@ gmsh.model.occ.translate(outs,-boxsize,0,0)
 # Check if bulk polymer entity has had label changed
 ents = gmsh.model.occ.getEntities(2)
 box = [boxdimtag]
-print(ents)
-print(box)
 ents.remove(boxdimtag)
 frags, pc = gmsh.model.occ.fragment(box, ents)
-print(frags)
 boxdimtag = pc[0][0]
 boxtag = boxdimtag[1]
 
@@ -427,9 +422,12 @@ gmsh.model.occ.synchronize()
 #TODO Need to fix tag references to account for fragmenting
 frags.remove(boxdimtag)
 gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
+#gmsh.model.removeEntities([boxdimtag],True)
 gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
 
 # We can then generate a 2D mesh...
+gmsh.option.setNumber("Mesh.MeshSizeMin",r)
+gmsh.option.setNumber("Mesh.MeshSizeMax",r)
 gmsh.model.mesh.generate(2)
 
 gmsh.model.occ.synchronize()
@@ -440,9 +438,18 @@ print(sinkents)
 sourcenodes = np.unique(gmsh.model.mesh.getElements(1,sourceents[0][1])[-1][0])
 sinknodes = np.unique(gmsh.model.mesh.getElements(1,sinkents[0][1])[-1][0])
 
-gmsh.write("gmsh.inp")
+gmsh.write("gmsh.msh")
 write_abaqus_diffusion(sourcenodes,sinknodes)
 gmsh.fltk.run()
 gmsh.finalize()
+
+# %%
+r = 2
+print(np.pi*r**2/(2*r)**2)
+print(2*np.pi*r**2/(2*r)**2)
+print(np.pi/4)
+
+# %%
+print(np.sqrt(r**2+r**2)-r)
 
 # %%
