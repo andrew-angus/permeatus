@@ -1,4 +1,3 @@
-
 use pyo3::prelude::*;
 
 #[pymodule]
@@ -9,42 +8,57 @@ fn rust_tools(_py: Python, m: &PyModule) -> PyResult<()> {
 
 #[pyfunction]
 fn random_insert(nc: usize, ybuff: f64, cbuff: f64, 
-                 boxsize: f64, eps: f64) -> PyResult<Vec<Vec<f64>>> {
+                 boxsize: f64, r: f64, eps: f64) -> PyResult<Vec<Vec<f64>>> {
 
   // 2D vector of circle centers
   let centers: Vec<Vec<f64>> = Vec::new();
 
+  // Box scaling limits for random number generation
+  let boxlims: Vec<f64> = vec!(boxsize,boxsize-2*ybuff);
+
   // Loop over number of desired circles
-  for i in (0..nc):
+  for i in 0..nc {
 
       // Loop specific variables
-      let niter = 0;
-      let reject = True;
+      let niter: u32 = 0;
+      let reject: bool = True;
       let c: Vec<f64> = Vec::new();
 
       // Continually try and insert circle within contstraints
       while reject {
 
           // Randomly draw circle center
-          c = np.random.rand(1,2)*np.array([[boxsize,boxsize-2*ybuff]])
-          c[0,1] += ybuff
+          let mut c: Vec<f64> = (0..2).zip(boxlims.iter())
+                                .map(|(_,&i2)| i2*rng.gen::<f64>()).collect();
+          c[1] = c[1] + ybuff;
           
-          // For first circle just check minimum distance from x-bounds
-          if np.abs(c[0,0]-r) > eps and np.abs(c[0,0]+r-boxsize) > eps:
-              if i == 0:
-                  reject = False
+          // Check minimum distance from x-bounds
+          if (c[0]-r).abs() > eps && (c[0]+r-boxsize).abs() > eps {
+
+              // Accept first circle
+              if i == 0 {
+                  reject = False;
                           
               // Afterwards check against distance between previous circles
               else:
-                  reject = False
-                  for center in centers:
-                      dist = np.linalg.norm(c[0]-center)
-                      translator = np.array([boxsize,0.0])
-                      ldist = np.linalg.norm(c[0]-translator-center)
-                      rdist = np.linalg.norm(c[0]+translator-center)
-                      mindist = np.min([dist,ldist,rdist])
-                      if mindist < cbuff:
-                          reject = True
+                  reject = False;
+                  for center in centers {
+
+                      // Get absoulte distance
+                      let mut mindist: f64 = distance(c,center);
+                      let translator: Vec<f64> = vec!(boxsize,0.0);
+
+                      // Check periodic shifted copies
+                      let lshift: Vec<f64> = c - translator;
+                      mindist = mindist.min(distance(lshift,center));
+                      let rshift: Vec<f64> = c + translator;
+                      mindist = mindist.min(distance(rshift,center));
+                      if mindist < cbuff {
+                          reject = True;
+                      }
+                  }
+              }
+          }
 
           // Check for excessive iterations
           niter = niter + 1;
@@ -56,8 +70,15 @@ fn random_insert(nc: usize, ybuff: f64, cbuff: f64,
 
       // Add accepted circle
       centers.push(c);
+  }
 
   // Return vector of circle centers
   return centers;
 
+}
+
+// Calculate the distance between two vectors
+fn distance(a: &Vec<f64>, b: &Vec<f64>) -> f64 {
+  let mut res: f64 = a.iter().zip(b.iter()).map(|(&i1, &i2)| i1 * i2).sum();
+  res = res.sqrt()  
 }
