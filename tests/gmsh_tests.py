@@ -4,6 +4,13 @@
 """
 
 # %%
+import numpy as np
+np.pi/(2*np.sqrt(3))
+
+# %%
+np.pi/(3*np.sqrt(2))
+
+# %%
 import gmsh
 import sys
 import fileinput as fi
@@ -444,12 +451,163 @@ gmsh.fltk.run()
 gmsh.finalize()
 
 # %%
-r = 2
-print(np.pi*r**2/(2*r)**2)
-print(2*np.pi*r**2/(2*r)**2)
-print(np.pi/4)
+"""
+# LS Algorithm
+"""
 
 # %%
-print(np.sqrt(r**2+r**2)-r)
+import matplotlib.pyplot as plt
+try:
+    gmsh.finalize()
+except:
+    pass
+gmsh.initialize()
+
+gmsh.model.add("random")
+
+gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
+gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
+gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
+
+# Microstructure specifications
+minspacefrac = 1e-3
+vfrac = 0.5
+r = 0.03
+area0 = np.pi*r**2
+nc = 10
+area1 = nc*area0
+area2 = area1/vfrac
+
+# Bounding box
+boxsize = np.sqrt(area2)
+print(boxsize)
+gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
+
+# Minimum spacing
+eps = 1e-3*boxsize
+
+# Define buffers
+ybuff = r + eps
+cbuff = 2*r + eps
+
+# Run LS algorithm
+# Randomly insert N point particles
+c = np.random.rand(nc,2)*np.array([[boxsize,boxsize-2*ybuff]])
+c[:,1] += ybuff
+
+# Randomly assign velocities
+v = np.random.rand(nc,2)*np.array([[2*boxsize,2*(boxsize-2*ybuff)]])
+v[:,0] -= boxsize
+v[:,1] -= boxsize-2*ybuff
+
+plt.scatter(c[:,0],c[:,1])
+plt.show()
+
+# Define algorithm variables
+h = 1e-5 # Radius growth rate
+t = 0 # Time
+rt = 0 # r(t)
+tf = r/h # Final time
+ymax = boxsize - eps/2 # Max y-coordinate
+ymin = eps/2 # Min y-coordinate
+rf = r + eps/2 # Final radius, including minimum spacing
+wallhits = np.zeros(nc)
+cp = np.zeros((nc,2))
+print(ymin,ymax)
+
+# Simulate growth and collisions till circles have grown to r + eps/2
+while rt < ybuff:
+
+    # List of wall collisions
+    for i in range(nc):
+        if v[i,1] > 0:
+            wallhits[i] = (ymax - rt - c[i,1])/(v[i,1]+h)
+            cp[i] = c[i] + v[i]*wallhits[i] + np.array([0,rt+h*wallhits[i]])
+        else:
+            wallhits[i] = (ymin + rt - c[i,1])/(v[i,1]+h)
+            cp[i] = c[i] + v[i]*wallhits[i] - np.array([0,rt+h*wallhits[i]])
+
+    # Find minimum and modify
+    bouncer = np.argmin(wallhits)
+    time = wallhits[bouncer]
+    c[bouncer] = c[bouncer] + v[bouncer]*wallhits[bouncer] # Propagate c
+    u = (c[bouncer]-cp[bouncer])/np.linalg.norm(c[bouncer]-cp[bouncer])
+    print(f'Particle: {bouncer}')
+    print(f'Position: {c[bouncer]}')
+    print(f'Velocity: {v[bouncer]}')
+    print(f'Impact point: {cp[bouncer]}')
+    print(f'Impact normal: {u}')
+    print(f'Velocity normal: {v[bouncer]/np.linalg.norm(v[bouncer])}')
+    #vp = np.dot(u,v[bouncer])*u
+    #vt = v[bouncer] - vp
+    #print(f'Parallel velocity: {vp}')
+    #print(f'Tangential velocity: {vt}')
+    v[bouncer,1] *= -1
+    print(f'Pre-boost: {v[bouncer]}')
+    v[bouncer] += u*h
+    print(f'Final velocity: {v[bouncer]}')
+
+    print(wallhits)
+    break
+
+    # Cap time to ybuff time, else next collision
+
+"""
+
+# Fragment overlapping shapes
+frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 2+nc)])
+boxdimtag = pc[0][0]
+boxtag = boxdimtag[1]
+
+# Translate shapes in left periodic copy and refragment
+eps = 1e-3
+outs = gmsh.model.occ.getEntitiesInBoundingBox(-boxsize-eps,-eps,-eps,eps,boxsize+eps,eps,2)
+gmsh.model.occ.translate(outs,boxsize,0,0)
+# Check if bulk polymer entity has had label changed
+ents = gmsh.model.occ.getEntities(2)
+box = [boxdimtag]
+ents.remove(boxdimtag)
+frags, pc = gmsh.model.occ.fragment(box, ents)
+boxdimtag = pc[0][0]
+boxtag = boxdimtag[1]
+
+# Translate shapes in right periodic copy and refragment
+outs = gmsh.model.occ.getEntitiesInBoundingBox(boxsize-eps,-eps,-eps,2*boxsize+eps,boxsize+eps,eps,2)
+gmsh.model.occ.translate(outs,-boxsize,0,0)
+# Check if bulk polymer entity has had label changed
+ents = gmsh.model.occ.getEntities(2)
+box = [boxdimtag]
+ents.remove(boxdimtag)
+frags, pc = gmsh.model.occ.fragment(box, ents)
+boxdimtag = pc[0][0]
+boxtag = boxdimtag[1]
+
+# Synchronise
+gmsh.model.occ.synchronize()
+
+#TODO Need to fix tag references to account for fragmenting
+frags.remove(boxdimtag)
+gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
+#gmsh.model.removeEntities([boxdimtag],True)
+gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
+
+# We can then generate a 2D mesh...
+gmsh.option.setNumber("Mesh.MeshSizeMin",r)
+gmsh.option.setNumber("Mesh.MeshSizeMax",r)
+gmsh.model.mesh.generate(2)
+
+gmsh.model.occ.synchronize()
+sourceents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,-eps,-eps,boxsize+eps,eps,eps,1)
+sinkents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,boxsize-eps,-eps,boxsize+eps,boxsize+eps,eps,1)
+print(sourceents)
+print(sinkents)
+sourcenodes = np.unique(gmsh.model.mesh.getElements(1,sourceents[0][1])[-1][0])
+sinknodes = np.unique(gmsh.model.mesh.getElements(1,sinkents[0][1])[-1][0])
+
+gmsh.write("gmsh.msh")
+write_abaqus_diffusion(sourcenodes,sinknodes)
+gmsh.fltk.run()
+"""
+gmsh.finalize()
 
 # %%
