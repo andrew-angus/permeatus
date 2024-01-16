@@ -484,7 +484,7 @@ print(boxsize)
 gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
 
 # Minimum spacing
-eps = 1e-3*boxsize
+eps = 1e-2*boxsize
 
 # Define buffers
 ybuff = r + eps
@@ -504,55 +504,188 @@ plt.scatter(c[:,0],c[:,1])
 plt.show()
 
 # Define algorithm variables
-h = 1e-5 # Radius growth rate
+h = 1e-2 # Radius growth rate
 t = 0 # Time
 rt = 0 # r(t)
-tf = r/h # Final time
 ymax = boxsize - eps/2 # Max y-coordinate
 ymin = eps/2 # Min y-coordinate
 rf = r + eps/2 # Final radius, including minimum spacing
-wallhits = np.zeros(nc)
+tf = rf/h # Final time
+wallhits = np.ones(nc)*np.inf
+parthits = np.ones((nc,nc))*np.inf
 cp = np.zeros((nc,2))
 print(ymin,ymax)
+niter = 0
+
+# Periodic wrapping of x-coordinate
+def xwrap(point):
+    point[0] -= np.floor(point[0]/boxsize)*boxsize
+    return point
+
+# Collision time for particles with each other
+def ppColl(ci,cj,vi,vj,h,rt):
+    cij = ci-cj
+    vij = vi-vj
+    A = np.dot(vij,vij) - 4*h**2
+    B = np.dot(cij,vij) - 4*h*rt
+    C = np.dot(cij,cij) - 4*rt**2
+    quad = B**2-A*C
+    if (B <= 0 or A < 0) and quad >=0:
+        res =  1/A*(-B-np.sqrt(quad))
+        return res
+        if res > 0:
+            return res
+        else:
+            return np.inf
+    else:
+        return np.inf
 
 # Simulate growth and collisions till circles have grown to r + eps/2
-while rt < ybuff:
+advancing = True
+while advancing and niter < 1000000:
 
     # List of wall collisions
     for i in range(nc):
-        if v[i,1] > 0:
-            wallhits[i] = (ymax - rt - c[i,1])/(v[i,1]+h)
-            cp[i] = c[i] + v[i]*wallhits[i] + np.array([0,rt+h*wallhits[i]])
+        if v[i,1] < 0.0:
+            bound = ymin
         else:
-            wallhits[i] = (ymin + rt - c[i,1])/(v[i,1]+h)
-            cp[i] = c[i] + v[i]*wallhits[i] - np.array([0,rt+h*wallhits[i]])
+            bound = ymax
+        wallhits[i] = (bound - np.sign(v[i,1])*rt - c[i,1])/(v[i,1]+np.sign(v[i,1])*h)
+        cp[i] = xwrap(c[i] + v[i]*wallhits[i] + np.sign(v[i,1])*np.array([0,rt+h*wallhits[i]]))
 
-    # Find minimum and modify
+    # Find minimum
     bouncer = np.argmin(wallhits)
     time = wallhits[bouncer]
-    c[bouncer] = c[bouncer] + v[bouncer]*wallhits[bouncer] # Propagate c
-    u = (c[bouncer]-cp[bouncer])/np.linalg.norm(c[bouncer]-cp[bouncer])
-    print(f'Particle: {bouncer}')
-    print(f'Position: {c[bouncer]}')
-    print(f'Velocity: {v[bouncer]}')
-    print(f'Impact point: {cp[bouncer]}')
-    print(f'Impact normal: {u}')
-    print(f'Velocity normal: {v[bouncer]/np.linalg.norm(v[bouncer])}')
-    #vp = np.dot(u,v[bouncer])*u
-    #vt = v[bouncer] - vp
-    #print(f'Parallel velocity: {vp}')
-    #print(f'Tangential velocity: {vt}')
-    v[bouncer,1] *= -1
-    print(f'Pre-boost: {v[bouncer]}')
-    v[bouncer] += u*h
-    print(f'Final velocity: {v[bouncer]}')
+    wallhit = True
 
-    print(wallhits)
-    break
+    # Get particle-particle collisions
+    for i in range(nc):
+        for j in range(i):
+            # Get central time
+            tcoll = ppColl(c[i],c[j],v[i],v[j],h,rt)
+            tcoll = np.minimum(ppColl(c[i]-np.array([boxsize,0]),c[j],v[i],v[j],h,rt),tcoll)
+            parthits[i,j] = np.minimum(ppColl(c[i],c[j]-np.array([boxsize,0]),v[i],v[j],h,rt),tcoll)
+            if parthits[i,j] < 0:
+                print(f'Times: {parthits[i,j]}, {ppColl(c[i],c[j],v[i],v[j],h,rt)}, \
+                {ppColl(c[i]-np.array([boxsize,0]),c[j],v[i],v[j],h,rt)}, {ppColl(c[i],c[j]-np.array([boxsize,0]),v[i],v[j],h,rt)}')
+                print(f'Particles: {i}, {j}')
+                print(f'Original positions: {c[i]}, {c[j]}')
+                # Propagate centers
+                c[i] = xwrap(c[i] + v[i]*time)
+                c[j] = xwrap(c[j] + v[j]*time)
+                dc = c[colliders[0]] - c[colliders[1]]
+                dc[0] -= round(dc[0] / boxsize) * boxsize
+                u = dc/np.linalg.norm(dc)
+                print(f'Velocities: {v[i]}, {v[j]}')
+                print(f'Final positions: {c[i]}, {c[j]}')
+                print(f'Impact point: {(c[i]+c[j])/2}')
+                print(f'Impact normal: {u}')
+                vpi = np.dot(u,v[i])*u
+                vti = v[i] - vpi
+                vpj = np.dot(u,v[j])*u
+                vtj = v[j] - vpj
+                print(f'Parallel velocities: {vpi}, {vpj}')
+                print(f'Tangential velocities: {vti}, {vtj}')
+                v[i] = vpj + vti
+                v[j] = vpi + vtj
+                print(f'Pre-boosts: {v[i]}, {v[j]}')
+                v[i] += 2*u*h
+                v[j] -= 2*u*h
+                print(f'Finals: {v[i]}, {v[j]}')
+                
+                print('')
+                break
+
+    # Find minimum and compare with wallhit time
+    colliders = np.unravel_index(parthits.argmin(), parthits.shape)
+    pptime = parthits[colliders]
+    if pptime < time:
+        wallhit = False
+        time = pptime
+
+
+    # Check for final time
+    if t + time > tf:
+        time = tf - t 
+        for i in range(nc):
+            c[i] = xwrap(c[i]+v[i]*time)
+        advancing = False
+    else:
+        if wallhit:
+            print(f'Particle: {bouncer}')
+            print(f'Original position: {c[bouncer]}')
+            c[bouncer] = xwrap(c[bouncer] + v[bouncer]*time) # Propagate c
+            u = (c[bouncer]-cp[bouncer])/np.linalg.norm(c[bouncer]-cp[bouncer])
+            print(f'Velocity: {v[bouncer]}')
+            print(f'Propagation time: {time}')
+            print(f'Final position: {c[bouncer]}')
+            print(f'Impact point: {cp[bouncer]}')
+            print(f'Impact normal: {u}')
+            print(f'Velocity normal: {v[bouncer]/np.linalg.norm(v[bouncer])}')
+            vp = np.dot(u,v[bouncer])*u
+            vt = v[bouncer] - vp
+            print(f'Parallel velocity: {vp}')
+            print(f'Tangential velocity: {vt}')
+            v[bouncer,1] *= -1
+            print(f'Pre-boost: {v[bouncer]}')
+            v[bouncer] += u*h
+            print(f'Final velocity: {v[bouncer]}')
+            print('')
+        
+        else:
+            print(f'Particles: {colliders[0]}, {colliders[1]}')
+            print(f'Propagation time: {time}')
+            print(f'Start and final radius: {rt}, {rt + time*h}')
+            print(f'Original positions: {c[colliders[0]]}, {c[colliders[1]]}')
+            # Propagate centers
+            c[colliders[0]] = xwrap(c[colliders[0]] + v[colliders[0]]*time)
+            c[colliders[1]] = xwrap(c[colliders[1]] + v[colliders[1]]*time)
+            dc = c[colliders[0]] - c[colliders[1]]
+            dc[0] -= round(dc[0] / boxsize) * boxsize
+            u = dc/np.linalg.norm(dc)
+            print(f'Velocities: {v[colliders[0]]}, {v[colliders[1]]}')
+            print(f'Final positions: {c[colliders[0]]}, {c[colliders[1]]}')
+            print(f'Impact point: {(c[colliders[0]]+c[colliders[1]])/2}')
+            print(f'Impact normal: {u}')
+            vpi = np.dot(u,v[colliders[0]])*u
+            vti = v[colliders[0]] - vpi
+            vpj = np.dot(u,v[colliders[1]])*u
+            vtj = v[colliders[1]] - vpj
+            print(f'Parallel velocities: {vpi}, {vpj}')
+            print(f'Tangential velocities: {vti}, {vtj}')
+            v[colliders[0]] = vpj + vti
+            v[colliders[1]] = vpi + vtj
+            print(f'Pre-boosts: {v[colliders[0]]}, {v[colliders[1]]}')
+            v[colliders[0]] += 2*u*h
+            v[colliders[1]] -= 2*u*h
+            print(f'Finals: {v[colliders[0]]}, {v[colliders[1]]}')
+            print('')
+            
+    if time < 0:
+        print('exiting ', niter, t, rt)
+        break
+    
+    # Propagate non-bouncing centers
+    for i in range(nc):
+        if (wallhit and i != bouncer) or ((not wallhit) and i != colliders[0] and i != colliders[1]):
+            c[i] = xwrap(c[i]+v[i]*time)
+            
+    # Update trackers
+    t += time
+    rt += h*time
+    niter += 1
+
+    print(niter,t,rt)
+    print('')
 
     # Cap time to ybuff time, else next collision
 
-"""
+plt.scatter(c[:,0],c[:,1])
+plt.show()
+
+for i in range(nc):
+    #gmsh.model.occ.addDisk(c[i,0],c[i,1],0,r,r,tag=2+i)
+    gmsh.model.occ.addDisk(c[i,0],c[i,1],0,r,r,tag=2+i)
 
 # Fragment overlapping shapes
 frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 2+nc)])
@@ -607,7 +740,13 @@ sinknodes = np.unique(gmsh.model.mesh.getElements(1,sinkents[0][1])[-1][0])
 gmsh.write("gmsh.msh")
 write_abaqus_diffusion(sourcenodes,sinknodes)
 gmsh.fltk.run()
-"""
 gmsh.finalize()
 
 # %%
+ci = np.array([0.16193409, 0.01884285])
+cj = np.array([0.17010674,0.03983353])
+print(np.linalg.norm(ci-cj))
+print(np.linalg.norm(ci-cj)/2)
+
+# %%
+0.001126278067159134
