@@ -5,20 +5,26 @@
 
 # %%
 import numpy as np
-np.pi/(2*np.sqrt(3))
-
-# %%
-np.pi/(3*np.sqrt(2))
-
-# %%
 import gmsh
 import sys
 import fileinput as fi
-import numpy as np
+from pandas import unique
+
+# %%
+# Function to write node sets
+def nodeset(f,nodes):
+    ticker = 1
+    for i,j in enumerate(nodes):
+        if ticker == 10 or i+1 == len(nodes):
+            f.write(f'{j},\n')
+            ticker = 1
+        else:
+            f.write(f'{j}, ')
+            ticker += 1
 
 # Abaqus diffusion sim input file production
 #TODO add variable inputs for material properties, timepoints, and BC magnitudes (best integrating with permeatus)
-def write_abaqus_diffusion(sourcenodes,sinknodes,fname="gmsh.inp"):
+def write_abaqus_diffusion(sourcenodes,sinknodes,leftnodes,rightnodes,fname="gmsh.inp"):
     # Replace element types with diffusion
     gmsh.write(fname)
     with fi.input(fname,inplace=True) as f:
@@ -29,23 +35,20 @@ def write_abaqus_diffusion(sourcenodes,sinknodes,fname="gmsh.inp"):
     with open(fname,"a") as f:
         # Define boundary node sets
         f.write('*NSET, NSET=source \n')
-        ticker = 1
-        for j in sourcenodes:
-            if ticker == 10 or ticker == len(sourcenodes):
-                f.write(f'{j},\n')
-                ticker = 1
-            else:
-                f.write(f'{j}, ')
-                ticker += 1
+        nodeset(f,sourcenodes)
         f.write('*NSET, NSET=sink \n')
-        ticker = 1
-        for j in sinknodes:
-            if ticker == 10 or ticker == len(sinknodes):
-                f.write(f'{j},\n')
-                ticker = 1
-            else:
-                f.write(f'{j}, ')
-                ticker += 1
+        nodeset(f,sinknodes)
+        f.write('*NSET, NSET=lwall, UNSORTED \n')
+        nodeset(f,leftnodes)
+        f.write('*NSET, NSET=rwall, UNSORTED \n')
+        nodeset(f,rightnodes)
+
+        # Periodic concentration for left and right walls
+        f.write('*Equation \n')
+        f.write('2 \n')
+        f.write("lwall, 11, 1. \n")
+        f.write("rwall, 11, -1. \n")
+
     
         # Define materials
         f.write(f'*Material, name=layer0\n')
@@ -151,13 +154,33 @@ gmsh.model.mesh.recombine()
 # Obtain source and sink nodes
 sourcenodes = gmsh.model.mesh.getElements(1,1)[-1][0]
 sinknodes = gmsh.model.mesh.getElements(1,6)[-1][0]
+leftnodes = np.append(gmsh.model.mesh.getElements(1,7)[-1][0], gmsh.model.mesh.getElements(1,4)[-1][0]) 
+rightnodes = np.append(gmsh.model.mesh.getElements(1,2)[-1][0], gmsh.model.mesh.getElements(1,5)[-1][0])
+print(sourcenodes)
+print(sinknodes)
+print(leftnodes)
+leftnodes = np.array([i for i in leftnodes if i not in sourcenodes])
+leftnodes = np.array([i for i in leftnodes if i not in sinknodes])
+print(leftnodes)
+print(rightnodes)
+rightnodes = np.array([i for i in rightnodes if i not in sourcenodes])
+rightnodes = np.array([i for i in rightnodes if i not in sinknodes])
+print(rightnodes)
+sourcenodes = unique(sourcenodes)
+sinknodes = unique(sinknodes)
+leftnodes = unique(leftnodes)
+rightnodes = unique(np.flip(rightnodes))
+print(sourcenodes)
+print(sinknodes)
+print(leftnodes)
+print(rightnodes)
 #print(gmsh.model.mesh.getElements())
 
 # Save for opening in gmsh
 gmsh.write("gmsh2layer.msh")
 
 # Save for running ABAQUS sim
-write_abaqus_diffusion(sourcenodes,sinknodes)
+write_abaqus_diffusion(sourcenodes,sinknodes,leftnodes,rightnodes)
 
 # Visualise
 gmsh.fltk.run()
@@ -470,11 +493,11 @@ gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
 gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
 
 # Microstructure specifications
-minspacefrac = 1e-3
+#minspacefrac = 1e-3
 vfrac = 0.5
 r = 0.03
 area0 = np.pi*r**2
-nc = 10
+nc = 100
 area1 = nc*area0
 area2 = area1/vfrac
 
