@@ -255,6 +255,11 @@ gmsh.finalize()
 """
 
 # %%
+r = np.linalg.norm(np.array([1,1]))
+a = np.sqrt(r**2/2)
+print(r,a)
+
+# %%
 try:
     gmsh.finalize()
 except:
@@ -273,15 +278,22 @@ boxsize = 1
 gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
 
 # Minimum spacing
-eps = 1e-3
+eps = r/10
 
 # Add a randomly centred circle
 r = 0.2
-ybuff = r + eps
 while True:
-    c = np.random.rand(2)*np.array([boxsize,boxsize-2*ybuff])
-    c[1] += ybuff
-    if np.abs(c[0]-r) > eps and np.abs(c[0]+r-boxsize) > eps:
+    c = np.random.rand(2)*np.array([boxsize,boxsize])
+    c = np.array([0.0,0.0])
+    #c = np.array([np.sqrt(r**2/2)+eps,np.sqrt(r**2/2)+eps])
+    #c = np.array([0.5,0.5])
+    #c = np.array([0.5,0.0])
+    #c = np.array([0.5,boxsize])
+    #c = np.array([boxsize,0.5])
+    #c = np.array([0.0,0.5])
+    # Check for minimum distance between circle exterior and bounding box
+    if np.abs(c[0]-r) > eps and np.abs(c[0]+r-boxsize) > eps and \
+        np.abs(c[1]-r) > eps and np.abs(c[1]+r-boxsize) > eps:
         gmsh.model.occ.addDisk(c[0],c[1],0,r,r,tag=2)
         break
 
@@ -289,9 +301,69 @@ while True:
 frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 3)])
 boxdimtag = pc[0][0]
 boxtag = boxdimtag[1]
+maxtag = np.max([i[1] for i in frags])
 
+# Corner fragment
+def corner_fragment(m,maxtag,shift):
+    m.addRectangle(shift[0],shift[1],0,boxsize,boxsize,tag=maxtag+1)
+    ents = m.getEntities(2)
+    bdimtag = (2,maxtag+1)
+    box = [bdimtag]
+    ents.remove(bdimtag)
+    frags, pc = m.fragment(box, ents)
+    bdimtag = pc[0][0]
+    print(pc)
+    box = [bdimtag]
+    print(m.getEntities(2))
+    m.remove(box,recursive=True)
+    ents = m.getEntities(2)
+    print(m.getEntities(2))
+    maxtag = np.max([i[1] for i in frags])
+    return maxtag
+
+# Also frament corner periodic transforms
+maxtag = corner_fragment(gmsh.model.occ,maxtag,np.array([-boxsize,-boxsize]))
+ents = gmsh.model.occ.getEntities(2)
+print(ents)
+print('')
+maxtag = corner_fragment(gmsh.model.occ,maxtag,np.array([-boxsize,boxsize]))
+ents = gmsh.model.occ.getEntities(2)
+print(ents)
+print('')
+maxtag = corner_fragment(gmsh.model.occ,maxtag,np.array([boxsize,boxsize]))
+ents = gmsh.model.occ.getEntities(2)
+print(ents)
+print('')
+maxtag = corner_fragment(gmsh.model.occ,maxtag,np.array([boxsize,-boxsize]))
+ents = gmsh.model.occ.getEntities(2)
+print(ents)
+print('')
+
+def periodic_shift(m,shift,boxdimtag):
+    outs = m.getEntitiesInBoundingBox(-eps+shift[0],-eps+shift[1],-eps,\
+                                      boxsize+eps+shift[0],boxsize+eps+shift[1],eps,2)
+    m.translate(outs,-shift[0],-shift[1],0)
+    # Check if bulk polymer entity has had label changed
+    ents = m.getEntities(2)
+    box = [boxdimtag]
+    ents.remove(boxdimtag)
+    frags, pc = m.fragment(box, ents)
+    boxdimtag = pc[0][0]
+    boxtag = boxdimtag[1]
+    return frags, boxdimtag, boxtag
+    
+
+# Periodic shifts
+frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([-boxsize,0]),boxdimtag)
+frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([boxsize,0]),boxdimtag)
+frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([0,-boxsize]),boxdimtag)
+frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([0,boxsize]),boxdimtag)
+frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([-boxsize,-boxsize]),boxdimtag)
+frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([-boxsize,boxsize]),boxdimtag)
+frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([boxsize,boxsize]),boxdimtag)
+frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([boxsize,-boxsize]),boxdimtag)
+"""
 # Translate shapes in left periodic copy and refragment
-eps = 1e-3
 outs = gmsh.model.occ.getEntitiesInBoundingBox(-boxsize-eps,-eps,-eps,eps,boxsize+eps,eps,2)
 gmsh.model.occ.translate(outs,boxsize,0,0)
 # Check if bulk polymer entity has had label changed
@@ -306,6 +378,7 @@ gmsh.model.occ.translate(outs,-boxsize,0,0)
 frags, pc = gmsh.model.occ.fragment([(2, boxtag)], [(2, i) for i in range(2, len(frags)+1)])
 boxdimtag = pc[0][0]
 boxtag = boxdimtag[1]
+"""
 
 # Synchronise
 gmsh.model.occ.synchronize()
@@ -320,17 +393,56 @@ gmsh.model.mesh.generate(2)
 
 gmsh.model.occ.synchronize()
 gmsh.write("gmsh.msh")
-sourceents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,-eps,-eps,boxsize+eps,eps,eps,1)
-sinkents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,boxsize-eps,-eps,boxsize+eps,boxsize+eps,eps,1)
-print(sourceents)
-print(sinkents)
-sourcenodes = np.unique(gmsh.model.mesh.getElements(1,sourceents[0][1])[-1][0])
-sinknodes = np.unique(gmsh.model.mesh.getElements(1,sinkents[0][1])[-1][0])
+
+# Get boundary node sets
+boundary = gmsh.model.getBoundary(gmsh.model.getEntities(2))
+leftnodes = np.empty(0,dtype=np.intc)
+leftcoords = np.empty(0)
+rightnodes = np.empty(0,dtype=np.intc)
+rightcoords = np.empty(0)
+topnodes = np.empty(0,dtype=np.intc)
+topcoords = np.empty(0)
+bottomnodes = np.empty(0,dtype=np.intc)
+bottomcoords = np.empty(0)
+for dim, tag in boundary:
+    nodeTags, coord, parametricCoord = gmsh.model.mesh.getNodes(dim, np.abs(tag), includeBoundary=True)
+    coords = np.reshape(coord, (len(coord)//3, 3))
+    main_coord = np.argmax(np.abs(np.sum(np.diff(coords,axis=0),axis=0)))
+    if main_coord == 0:
+        if np.isclose(coord[1],0.0):
+            bottomnodes = np.r_[bottomnodes,nodeTags]
+            bottomcoords = np.r_[bottomcoords, coords[:,main_coord]]
+        elif np.isclose(coord[1],boxsize):
+            topnodes = np.r_[topnodes,nodeTags]
+            topcoords = np.r_[topcoords, coords[:,main_coord]]
+    elif main_coord == 1:
+        if np.isclose(coord[0],0.0):
+            leftnodes = np.r_[leftnodes,nodeTags]
+            leftcoords = np.r_[leftcoords, coords[:,main_coord]]
+        elif np.isclose(coord[0],boxsize):
+            rightnodes = np.r_[rightnodes,nodeTags]
+            rightcoords = np.r_[rightcoords, coords[:,main_coord]]
+
+sorts = np.argsort(bottomcoords)
+bottomcoords = bottomcoords[sorts]
+bottomnodes = unique(bottomnodes[sorts])
+sorts = np.argsort(topcoords)
+topcoords = topcoords[sorts]
+topnodes = unique(topnodes[sorts])
+sorts = np.argsort(leftcoords)
+leftcoords = leftcoords[sorts]
+leftnodes = unique(leftnodes[sorts][1:-1])
+sorts = np.argsort(rightcoords)
+rightcoords = rightcoords[sorts]
+rightnodes = unique(rightnodes[sorts][1:-1])
 
 gmsh.write("gmsh.msh")
-write_abaqus_diffusion(sourcenodes,sinknodes)
-#gmsh.fltk.run()
+write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
+gmsh.fltk.run()
 gmsh.finalize()
+
+# %%
+print(np.sqrt(0.1**2+0.2**2))
 
 # %%
 """
