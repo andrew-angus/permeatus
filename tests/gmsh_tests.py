@@ -1,6 +1,6 @@
 # %%
 """
-# ABAQUS 2-layer
+# Setup
 """
 
 # %%
@@ -9,6 +9,108 @@ import gmsh
 import sys
 import fileinput as fi
 from pandas import unique
+import matplotlib.pyplot as plt
+
+# %%
+"""
+## Gmsh functions
+"""
+
+# %%
+# Corner fragment
+def corner_fragment(m,maxtag,shift,boxsize):
+    print(shift,maxtag)
+    m.addRectangle(shift[0],shift[1],0,boxsize,boxsize,tag=maxtag+1)
+    ents = m.getEntities(2)
+    bdimtag = (2,maxtag+1)
+    box = [bdimtag]
+    ents.remove(bdimtag)
+    frags, pc = m.fragment(box, ents)
+    bdimtag = pc[0][0]
+    box = [bdimtag]
+    m.remove(box,recursive=True)
+    ents = m.getEntities(2)
+    maxtag = np.max([i[1] for i in frags])
+    return maxtag
+
+# Periodic shift of overlapping entities
+def periodic_shift(m,shift,boxdimtag,eps):
+    outs = m.getEntitiesInBoundingBox(-eps/2+shift[0],-eps/2+shift[1],-eps/2,\
+                                      boxsize+eps/2+shift[0],boxsize+eps/2+shift[1],eps/2,2)
+    m.translate(outs,-shift[0],-shift[1],0)
+    ents = m.getEntities(2)
+    box = [boxdimtag]
+    ents.remove(boxdimtag)
+    frags, pc = m.fragment(box, ents)
+    boxdimtag = pc[0][0]
+    boxtag = boxdimtag[1]
+    return frags, boxdimtag, boxtag
+    
+# Get boundary node sets in 2D box setups
+def boundary_nodes_2d(m):
+    boundary = m.getBoundary(gmsh.model.getEntities(2))
+    leftnodes = np.empty(0)
+    leftcoords = np.empty(0)
+    rightnodes = np.empty(0)
+    rightcoords = np.empty(0)
+    topnodes = np.empty(0)
+    topcoords = np.empty(0)
+    bottomnodes = np.empty(0)
+    bottomcoords = np.empty(0)
+    for dim, tag in boundary:
+        nodeTags, coord, parametricCoord = m.mesh.getNodes(dim, np.abs(tag), includeBoundary=True)
+        coords = np.reshape(coord, (len(coord)//3, 3))
+        main_coord = np.argmax(np.abs(np.sum(np.diff(coords,axis=0),axis=0)))
+        if main_coord == 0:
+            if np.isclose(coord[1],0.0):
+                bottomnodes = np.r_[bottomnodes,nodeTags]
+                bottomcoords = np.r_[bottomcoords, coords[:,main_coord]]
+            elif np.isclose(coord[1],boxsize):
+                topnodes = np.r_[topnodes,nodeTags]
+                topcoords = np.r_[topcoords, coords[:,main_coord]]
+        elif main_coord == 1:
+            if np.isclose(coord[0],0.0):
+                leftnodes = np.r_[leftnodes,nodeTags]
+                leftcoords = np.r_[leftcoords, coords[:,main_coord]]
+            elif np.isclose(coord[0],boxsize):
+                rightnodes = np.r_[rightnodes,nodeTags]
+                rightcoords = np.r_[rightcoords, coords[:,main_coord]]
+    
+    sorts = np.argsort(bottomcoords)
+    bottomcoords = bottomcoords[sorts]
+    bottomnodes = unique(bottomnodes[sorts]).astype(np.intc)
+    sorts = np.argsort(topcoords)
+    topcoords = topcoords[sorts]
+    topnodes = unique(topnodes[sorts]).astype(np.intc)
+    sorts = np.argsort(leftcoords)
+    leftcoords = leftcoords[sorts]
+    leftnodes = unique(leftnodes[sorts][1:-1]).astype(np.intc)
+    sorts = np.argsort(rightcoords)
+    rightcoords = rightcoords[sorts]
+    rightnodes = unique(rightnodes[sorts][1:-1]).astype(np.intc)
+
+    return bottomnodes, topnodes, leftnodes, rightnodes
+
+def bound_proximity_check_2d(c,r,eps,boxsize):
+    leftprox = np.abs(c[0]-r) > eps
+    rightprox = np.abs(c[0]+r-boxsize) > eps
+    bottomprox = np.abs(c[1]-r) > eps
+    topprox = np.abs(c[1]+r-boxsize) > eps
+    bottomleftprox = np.abs(np.linalg.norm(c)-r) > eps
+    br = np.array([boxsize,0])
+    bottomrightprox = np.abs(np.linalg.norm(c-br)-r) > eps
+    tr = np.array([boxsize,boxsize])
+    toprightprox = np.abs(np.linalg.norm(c-tr)-r) > eps
+    tl = np.array([0,boxsize])
+    topleftprox = np.abs(np.linalg.norm(c-tl)-r) > eps
+    return leftprox and rightprox and bottomprox and topprox \
+        and bottomleftprox and bottomrightprox and topleftprox and toprightprox
+
+
+# %%
+"""
+## Abaqus Output File Functions
+"""
 
 # %%
 # Function to write node sets
@@ -90,6 +192,11 @@ def write_abaqus_diffusion(sourcenodes,sinknodes,leftnodes,rightnodes,fname="gms
     # Check
     #with open(fname,"r") as f:
     #    print(f.read())
+
+# %%
+"""
+# ABAQUS 2-layer
+"""
 
 # %%
 # Initialise
@@ -194,70 +301,9 @@ gmsh.finalize()
 """
 
 # %%
-gmsh.initialize()
-
-gmsh.model.add("t1")
-
-gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
-gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
-
-# Bounding box
-boxsize = 1
-gmsh.model.geo.addPoint(0, 0, 0, tag=1)
-gmsh.model.geo.addPoint(boxsize, 0, 0, tag=2)
-gmsh.model.geo.addPoint(boxsize, boxsize, 0, tag=3)
-gmsh.model.geo.addPoint(0, boxsize, 0, tag=4)
-
-gmsh.model.geo.addLine(1, 2, 1)
-gmsh.model.geo.addLine(2, 3, 2)
-gmsh.model.geo.addLine(3, 4, 3)
-gmsh.model.geo.addLine(4, 1, 4)
-
-gmsh.model.geo.addCurveLoop([1, 2, 3, 4], 1)
-
-# Add 1 central circle to start with
-r = 0.1
-gmsh.model.geo.addPoint(boxsize/2, boxsize/2, 0, tag=5) # Centre
-gmsh.model.geo.addPoint(boxsize/2, boxsize/2-r, 0, tag=6) # Rdial point south
-gmsh.model.geo.addPoint(boxsize/2+r, boxsize/2, 0, tag=7) # Radial east
-gmsh.model.geo.addPoint(boxsize/2, boxsize/2+r, 0, tag=8) # Radial north
-gmsh.model.geo.addPoint(boxsize/2-r, boxsize/2, 0, tag=9) # Rdial point west
-gmsh.model.geo.addCircleArc(6, 5, 7, 5)
-gmsh.model.geo.addCircleArc(7, 5, 8, 6)
-gmsh.model.geo.addCircleArc(8, 5, 9, 7)
-gmsh.model.geo.addCircleArc(9, 5, 6, 8)
-gmsh.model.geo.addCurveLoop([5,6,7,8], 2)
-
-gmsh.model.geo.addPlaneSurface([1,2], 1) # Box with hole
-gmsh.model.geo.addPlaneSurface([2], 2) # Circle
-
-gmsh.model.geo.synchronize()
-
-gmsh.model.addPhysicalGroup(2, [1], name="layer0")
-gmsh.model.addPhysicalGroup(2, [2], name="layer1")
-
-# We can then generate a 2D mesh...
-gmsh.model.mesh.generate(2)
-
-
-sourcenodes = np.unique(gmsh.model.mesh.getElements(1,1)[-1][0])
-sinknodes = np.unique(gmsh.model.mesh.getElements(1,3)[-1][0])
-print(sourcenodes,sinknodes)
-
-gmsh.write("gmshhole.msh")
-write_abaqus_diffusion(sourcenodes,sinknodes)
-gmsh.fltk.run()
-gmsh.finalize()
-
-# %%
 """
 # Box with random hole
 """
-
-# %%
-r = np.linalg.norm(np.array([1,1]))
-a = np.sqrt(r**2/2)
-print(r,a)
 
 # %%
 try:
@@ -268,29 +314,28 @@ gmsh.initialize()
 
 gmsh.model.add("random")
 
-gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
+#gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
-gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
-
+#gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
 
 # Bounding box
 boxsize = 1
 gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
 
-# Minimum spacing
+# Circel radius and inimum spacing
+r = 0.2
 eps = r/10
 
+# Periodic translation arrays
+translationbase = np.array([-boxsize,0.0,boxsize])
+translations = np.array([[i,j] for i in translationbase for j in translationbase])
+translations = np.delete(translations,4,axis=0)
+corners = np.array([[i,j] for i in translationbase[::2] for j in translationbase[::2]])
+
 # Add a randomly centred circle
-r = 0.2
 while True:
-    c = np.random.rand(2)*np.array([boxsize,boxsize])
-    c = np.array([0.0,0.0])
-    #c = np.array([np.sqrt(r**2/2)+eps,np.sqrt(r**2/2)+eps])
-    #c = np.array([0.5,0.5])
-    #c = np.array([0.5,0.0])
-    #c = np.array([0.5,boxsize])
-    #c = np.array([boxsize,0.5])
-    #c = np.array([0.0,0.5])
+    #c = np.random.rand(2)*np.array([boxsize,boxsize]) # Random position
+    c = np.array([0.0,0.0]) # Corner test case
     # Check for minimum distance between circle exterior and bounding box
     if np.abs(c[0]-r) > eps and np.abs(c[0]+r-boxsize) > eps and \
         np.abs(c[1]-r) > eps and np.abs(c[1]+r-boxsize) > eps:
@@ -303,146 +348,33 @@ boxdimtag = pc[0][0]
 boxtag = boxdimtag[1]
 maxtag = np.max([i[1] for i in frags])
 
-# Corner fragment
-def corner_fragment(m,maxtag,shift):
-    m.addRectangle(shift[0],shift[1],0,boxsize,boxsize,tag=maxtag+1)
-    ents = m.getEntities(2)
-    bdimtag = (2,maxtag+1)
-    box = [bdimtag]
-    ents.remove(bdimtag)
-    frags, pc = m.fragment(box, ents)
-    bdimtag = pc[0][0]
-    print(pc)
-    box = [bdimtag]
-    print(m.getEntities(2))
-    m.remove(box,recursive=True)
-    ents = m.getEntities(2)
-    print(m.getEntities(2))
-    maxtag = np.max([i[1] for i in frags])
-    return maxtag
-
-# Also frament corner periodic transforms
-maxtag = corner_fragment(gmsh.model.occ,maxtag,np.array([-boxsize,-boxsize]))
-ents = gmsh.model.occ.getEntities(2)
-print(ents)
-print('')
-maxtag = corner_fragment(gmsh.model.occ,maxtag,np.array([-boxsize,boxsize]))
-ents = gmsh.model.occ.getEntities(2)
-print(ents)
-print('')
-maxtag = corner_fragment(gmsh.model.occ,maxtag,np.array([boxsize,boxsize]))
-ents = gmsh.model.occ.getEntities(2)
-print(ents)
-print('')
-maxtag = corner_fragment(gmsh.model.occ,maxtag,np.array([boxsize,-boxsize]))
-ents = gmsh.model.occ.getEntities(2)
-print(ents)
-print('')
-
-def periodic_shift(m,shift,boxdimtag):
-    outs = m.getEntitiesInBoundingBox(-eps+shift[0],-eps+shift[1],-eps,\
-                                      boxsize+eps+shift[0],boxsize+eps+shift[1],eps,2)
-    m.translate(outs,-shift[0],-shift[1],0)
-    # Check if bulk polymer entity has had label changed
-    ents = m.getEntities(2)
-    box = [boxdimtag]
-    ents.remove(boxdimtag)
-    frags, pc = m.fragment(box, ents)
-    boxdimtag = pc[0][0]
-    boxtag = boxdimtag[1]
-    return frags, boxdimtag, boxtag
-    
+# Also frament corner periodic translations
+for i in corners:
+    maxtag = corner_fragment(gmsh.model.occ,maxtag,i,boxsize)
 
 # Periodic shifts
-frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([-boxsize,0]),boxdimtag)
-frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([boxsize,0]),boxdimtag)
-frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([0,-boxsize]),boxdimtag)
-frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([0,boxsize]),boxdimtag)
-frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([-boxsize,-boxsize]),boxdimtag)
-frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([-boxsize,boxsize]),boxdimtag)
-frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([boxsize,boxsize]),boxdimtag)
-frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,np.array([boxsize,-boxsize]),boxdimtag)
-"""
-# Translate shapes in left periodic copy and refragment
-outs = gmsh.model.occ.getEntitiesInBoundingBox(-boxsize-eps,-eps,-eps,eps,boxsize+eps,eps,2)
-gmsh.model.occ.translate(outs,boxsize,0,0)
-# Check if bulk polymer entity has had label changed
-frags, pc = gmsh.model.occ.fragment([(2, boxtag)], [(2, i) for i in range(2, len(frags)+1)])
-boxdimtag = pc[0][0]
-boxtag = boxdimtag[1]
-
-# Translate shapes in right periodic copy and refragment
-outs = gmsh.model.occ.getEntitiesInBoundingBox(boxsize-eps,-eps,-eps,2*boxsize+eps,boxsize+eps,eps,2)
-gmsh.model.occ.translate(outs,-boxsize,0,0)
-# Check if bulk polymer entity has had label changed
-frags, pc = gmsh.model.occ.fragment([(2, boxtag)], [(2, i) for i in range(2, len(frags)+1)])
-boxdimtag = pc[0][0]
-boxtag = boxdimtag[1]
-"""
+for i in translations:
+    frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,i,boxdimtag,eps)
 
 # Synchronise
 gmsh.model.occ.synchronize()
 
-#TODO Need to fix tag references to account for fragmenting
+# Identify physical groups for material assignment
 frags.remove(boxdimtag)
 gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
 gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
 
-# We can then generate a 2D mesh...
+# Generate mesh
 gmsh.model.mesh.generate(2)
 
+# Acquire boundary node sets
 gmsh.model.occ.synchronize()
-gmsh.write("gmsh.msh")
-
-# Get boundary node sets
-boundary = gmsh.model.getBoundary(gmsh.model.getEntities(2))
-leftnodes = np.empty(0,dtype=np.intc)
-leftcoords = np.empty(0)
-rightnodes = np.empty(0,dtype=np.intc)
-rightcoords = np.empty(0)
-topnodes = np.empty(0,dtype=np.intc)
-topcoords = np.empty(0)
-bottomnodes = np.empty(0,dtype=np.intc)
-bottomcoords = np.empty(0)
-for dim, tag in boundary:
-    nodeTags, coord, parametricCoord = gmsh.model.mesh.getNodes(dim, np.abs(tag), includeBoundary=True)
-    coords = np.reshape(coord, (len(coord)//3, 3))
-    main_coord = np.argmax(np.abs(np.sum(np.diff(coords,axis=0),axis=0)))
-    if main_coord == 0:
-        if np.isclose(coord[1],0.0):
-            bottomnodes = np.r_[bottomnodes,nodeTags]
-            bottomcoords = np.r_[bottomcoords, coords[:,main_coord]]
-        elif np.isclose(coord[1],boxsize):
-            topnodes = np.r_[topnodes,nodeTags]
-            topcoords = np.r_[topcoords, coords[:,main_coord]]
-    elif main_coord == 1:
-        if np.isclose(coord[0],0.0):
-            leftnodes = np.r_[leftnodes,nodeTags]
-            leftcoords = np.r_[leftcoords, coords[:,main_coord]]
-        elif np.isclose(coord[0],boxsize):
-            rightnodes = np.r_[rightnodes,nodeTags]
-            rightcoords = np.r_[rightcoords, coords[:,main_coord]]
-
-sorts = np.argsort(bottomcoords)
-bottomcoords = bottomcoords[sorts]
-bottomnodes = unique(bottomnodes[sorts])
-sorts = np.argsort(topcoords)
-topcoords = topcoords[sorts]
-topnodes = unique(topnodes[sorts])
-sorts = np.argsort(leftcoords)
-leftcoords = leftcoords[sorts]
-leftnodes = unique(leftnodes[sorts][1:-1])
-sorts = np.argsort(rightcoords)
-rightcoords = rightcoords[sorts]
-rightnodes = unique(rightnodes[sorts][1:-1])
+bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model)
 
 gmsh.write("gmsh.msh")
 write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
 gmsh.fltk.run()
 gmsh.finalize()
-
-# %%
-print(np.sqrt(0.1**2+0.2**2))
 
 # %%
 """
@@ -458,36 +390,36 @@ gmsh.initialize()
 
 gmsh.model.add("random")
 
-gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
+#gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
-gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
+#gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
 
 # Microstructure specifications
-minspacefrac = 1e-3
 vfrac = 0.5
-r = 0.03
+r = 5.2e-6
 area0 = np.pi*r**2
-print(area0)
-nc = 100
+nc = 15
 area1 = nc*area0
-print(area1)
 area2 = area1/vfrac
 
 # Bounding box
 boxsize = np.sqrt(area2)
-print(boxsize)
+print(boxsize*1e6)
 gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
 
 # Minimum spacing
-eps = 1e-3*boxsize
-print(eps*boxsize/area2)
-
-# Add a randomly centred circle
-ybuff = r + eps
+eps = r*0.05
 cbuff = 2*r + eps
-centers = np.empty((0,2))
-print(cbuff)
+
+# Translation arrays
+translationbase = np.array([-boxsize,0.0,boxsize])
+translations = np.array([[i,j] for i in translationbase for j in translationbase])
+translations = np.delete(translations,4,axis=0)
+corners = np.array([[i,j] for i in translationbase[::2] for j in translationbase[::2]])
+
+# Add randomly centred circles
 # Loop over number of desired circles
+centers = np.empty((0,2))
 for i in range(nc):
 
     # Continually try and insert circle within contstraints
@@ -496,11 +428,10 @@ for i in range(nc):
     while reject:
 
         # Randomly draw circle center
-        c = np.random.rand(1,2)*np.array([[boxsize,boxsize-2*ybuff]])
-        c[0,1] += ybuff
+        c = np.random.rand(1,2)*np.array([[boxsize,boxsize]])
         
-        # For first circle just check minimum distance from x-bounds
-        if np.abs(c[0,0]-r) > eps and np.abs(c[0,0]+r-boxsize) > eps:
+        # For first circle just check minimum distance from edges and corners
+        if bound_proximity_check_2d(c[0],r,eps,boxsize):
             if i == 0:
                 reject = False
                         
@@ -508,11 +439,10 @@ for i in range(nc):
             else:
                 reject = False
                 for center in centers:
-                    dist = np.linalg.norm(c[0]-center)
-                    translator = np.array([boxsize,0.0])
-                    ldist = np.linalg.norm(c[0]-translator-center)
-                    rdist = np.linalg.norm(c[0]+translator-center)
-                    mindist = np.min([dist,ldist,rdist])
+                    mindist = np.linalg.norm(c[0]-center)
+                    for translator in translations:
+                        dist = np.linalg.norm(c[0]+translator-center)
+                        mindist = np.minimum(dist,mindist)
                     if mindist < cbuff:
                         reject = True
         niter += 1
@@ -524,39 +454,19 @@ for i in range(nc):
     centers = np.r_[centers,c]
     gmsh.model.occ.addDisk(c[0,0],c[0,1],0,r,r,tag=2+i)
 
-centmod = centers.copy()
-centmod *= 2
-centmod[:,0] += 4.0
-centmod[:,1] += 1.6
-print(centmod)
-
 # Fragment overlapping shapes
 frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 2+nc)])
 boxdimtag = pc[0][0]
 boxtag = boxdimtag[1]
+maxtag = np.max([i[1] for i in frags])
 
-# Translate shapes in left periodic copy and refragment
-eps = 1e-3
-outs = gmsh.model.occ.getEntitiesInBoundingBox(-boxsize-eps,-eps,-eps,eps,boxsize+eps,eps,2)
-gmsh.model.occ.translate(outs,boxsize,0,0)
-# Check if bulk polymer entity has had label changed
-ents = gmsh.model.occ.getEntities(2)
-box = [boxdimtag]
-ents.remove(boxdimtag)
-frags, pc = gmsh.model.occ.fragment(box, ents)
-boxdimtag = pc[0][0]
-boxtag = boxdimtag[1]
+# Also frament corner periodic translations
+for i in corners:
+    maxtag = corner_fragment(gmsh.model.occ,maxtag,i,boxsize)
 
-# Translate shapes in right periodic copy and refragment
-outs = gmsh.model.occ.getEntitiesInBoundingBox(boxsize-eps,-eps,-eps,2*boxsize+eps,boxsize+eps,eps,2)
-gmsh.model.occ.translate(outs,-boxsize,0,0)
-# Check if bulk polymer entity has had label changed
-ents = gmsh.model.occ.getEntities(2)
-box = [boxdimtag]
-ents.remove(boxdimtag)
-frags, pc = gmsh.model.occ.fragment(box, ents)
-boxdimtag = pc[0][0]
-boxtag = boxdimtag[1]
+# Periodic shifts
+for i in translations:
+    frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,i,boxdimtag,eps)
 
 # Synchronise
 gmsh.model.occ.synchronize()
@@ -564,24 +474,18 @@ gmsh.model.occ.synchronize()
 #TODO Need to fix tag references to account for fragmenting
 frags.remove(boxdimtag)
 gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
-#gmsh.model.removeEntities([boxdimtag],True)
 gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
 
 # We can then generate a 2D mesh...
-gmsh.option.setNumber("Mesh.MeshSizeMin",r)
-gmsh.option.setNumber("Mesh.MeshSizeMax",r)
+gmsh.option.setNumber("Mesh.MeshSizeMin",eps)
+gmsh.option.setNumber("Mesh.MeshSizeMax",r/5)
 gmsh.model.mesh.generate(2)
 
 gmsh.model.occ.synchronize()
-sourceents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,-eps,-eps,boxsize+eps,eps,eps,1)
-sinkents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,boxsize-eps,-eps,boxsize+eps,boxsize+eps,eps,1)
-print(sourceents)
-print(sinkents)
-sourcenodes = np.unique(gmsh.model.mesh.getElements(1,sourceents[0][1])[-1][0])
-sinknodes = np.unique(gmsh.model.mesh.getElements(1,sinkents[0][1])[-1][0])
+bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model)
 
 gmsh.write("gmsh.msh")
-write_abaqus_diffusion(sourcenodes,sinknodes)
+write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
 gmsh.fltk.run()
 gmsh.finalize()
 
@@ -591,18 +495,17 @@ gmsh.finalize()
 """
 
 # %%
-import matplotlib.pyplot as plt
 try:
     gmsh.finalize()
 except:
     pass
 gmsh.initialize()
 
-gmsh.model.add("random")
+gmsh.model.add("microstructure")
 
-gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
+#gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
-gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
+#gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
 
 # Microstructure specifications
 #minspacefrac = 1e-3
@@ -826,29 +729,15 @@ for i in range(nc):
 frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 2+nc)])
 boxdimtag = pc[0][0]
 boxtag = boxdimtag[1]
+maxtag = np.max([i[1] for i in frags])
 
-# Translate shapes in left periodic copy and refragment
-eps = 1e-3
-outs = gmsh.model.occ.getEntitiesInBoundingBox(-boxsize-eps,-eps,-eps,eps,boxsize+eps,eps,2)
-gmsh.model.occ.translate(outs,boxsize,0,0)
-# Check if bulk polymer entity has had label changed
-ents = gmsh.model.occ.getEntities(2)
-box = [boxdimtag]
-ents.remove(boxdimtag)
-frags, pc = gmsh.model.occ.fragment(box, ents)
-boxdimtag = pc[0][0]
-boxtag = boxdimtag[1]
+# Also frament corner periodic translations
+for i in corners:
+    maxtag = corner_fragment(gmsh.model.occ,maxtag,i,boxsize)
 
-# Translate shapes in right periodic copy and refragment
-outs = gmsh.model.occ.getEntitiesInBoundingBox(boxsize-eps,-eps,-eps,2*boxsize+eps,boxsize+eps,eps,2)
-gmsh.model.occ.translate(outs,-boxsize,0,0)
-# Check if bulk polymer entity has had label changed
-ents = gmsh.model.occ.getEntities(2)
-box = [boxdimtag]
-ents.remove(boxdimtag)
-frags, pc = gmsh.model.occ.fragment(box, ents)
-boxdimtag = pc[0][0]
-boxtag = boxdimtag[1]
+# Periodic shifts
+for i in translations:
+    frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,i,boxdimtag,eps)
 
 # Synchronise
 gmsh.model.occ.synchronize()
@@ -860,28 +749,17 @@ gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
 gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
 
 # We can then generate a 2D mesh...
-gmsh.option.setNumber("Mesh.MeshSizeMin",r)
-gmsh.option.setNumber("Mesh.MeshSizeMax",r)
+gmsh.option.setNumber("Mesh.MeshSizeMin",eps)
+gmsh.option.setNumber("Mesh.MeshSizeMax",r/5)
 gmsh.model.mesh.generate(2)
 
 gmsh.model.occ.synchronize()
-sourceents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,-eps,-eps,boxsize+eps,eps,eps,1)
-sinkents = gmsh.model.occ.getEntitiesInBoundingBox(-eps,boxsize-eps,-eps,boxsize+eps,boxsize+eps,eps,1)
-print(sourceents)
-print(sinkents)
-sourcenodes = np.unique(gmsh.model.mesh.getElements(1,sourceents[0][1])[-1][0])
-sinknodes = np.unique(gmsh.model.mesh.getElements(1,sinkents[0][1])[-1][0])
+bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model)
 
 gmsh.write("gmsh.msh")
-write_abaqus_diffusion(sourcenodes,sinknodes)
+write_abaqus_diffusion(bottomnodes, topnodes, leftnodes, rightnodes)
 gmsh.fltk.run()
 gmsh.finalize()
-
-# %%
-ci = np.array([0.16193409, 0.01884285])
-cj = np.array([0.17010674,0.03983353])
-print(np.linalg.norm(ci-cj))
-print(np.linalg.norm(ci-cj)/2)
 
 # %%
 0.001126278067159134
