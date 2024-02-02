@@ -10,6 +10,7 @@ import sys
 import fileinput as fi
 from pandas import unique
 import matplotlib.pyplot as plt
+from tqdm.notebook import trange
 
 # %%
 """
@@ -17,37 +18,8 @@ import matplotlib.pyplot as plt
 """
 
 # %%
-# Corner fragment
-def corner_fragment(m,maxtag,shift,boxsize):
-    print(shift,maxtag)
-    m.addRectangle(shift[0],shift[1],0,boxsize,boxsize,tag=maxtag+1)
-    ents = m.getEntities(2)
-    bdimtag = (2,maxtag+1)
-    box = [bdimtag]
-    ents.remove(bdimtag)
-    frags, pc = m.fragment(box, ents)
-    bdimtag = pc[0][0]
-    box = [bdimtag]
-    m.remove(box,recursive=True)
-    ents = m.getEntities(2)
-    maxtag = np.max([i[1] for i in frags])
-    return maxtag
-
-# Periodic shift of overlapping entities
-def periodic_shift(m,shift,boxdimtag,eps):
-    outs = m.getEntitiesInBoundingBox(-eps/2+shift[0],-eps/2+shift[1],-eps/2,\
-                                      boxsize+eps/2+shift[0],boxsize+eps/2+shift[1],eps/2,2)
-    m.translate(outs,-shift[0],-shift[1],0)
-    ents = m.getEntities(2)
-    box = [boxdimtag]
-    ents.remove(boxdimtag)
-    frags, pc = m.fragment(box, ents)
-    boxdimtag = pc[0][0]
-    boxtag = boxdimtag[1]
-    return frags, boxdimtag, boxtag
-    
 # Get boundary node sets in 2D box setups
-def boundary_nodes_2d(m):
+def boundary_nodes_2d(m,boxsize):
     boundary = m.getBoundary(gmsh.model.getEntities(2))
     leftnodes = np.empty(0)
     leftcoords = np.empty(0)
@@ -105,7 +77,78 @@ def bound_proximity_check_2d(c,r,eps,boxsize):
     topleftprox = np.abs(np.linalg.norm(c-tl)-r) > eps
     return leftprox and rightprox and bottomprox and topprox \
         and bottomleftprox and bottomrightprox and topleftprox and toprightprox
+    
+def periodic_copy(m,c,r,boxsize,maxtag):
+    if c[0]-r < 0.0:
+        m.addDisk(c[0]+boxsize,c[1],0,r,r,tag=maxtag+1)
+        maxtag += 1
+    if c[0]+r > boxsize:
+        m.addDisk(c[0]-boxsize,c[1],0,r,r,tag=maxtag+1)
+        maxtag += 1
+    if c[1]-r < 0.0:
+        m.addDisk(c[0],c[1]+boxsize,0,r,r,tag=maxtag+1)
+        maxtag += 1
+    if c[1]+r > boxsize:
+        m.addDisk(c[0],c[1]-boxsize,0,r,r,tag=maxtag+1)
+        maxtag += 1
+    if np.linalg.norm(c)-r < 0.0:
+        m.addDisk(c[0]+boxsize,c[1]+boxsize,0,r,r,tag=maxtag+1)
+        maxtag += 1
+    if np.linalg.norm(c-np.array([0,boxsize]))-r < 0.0:
+        m.addDisk(c[0]+boxsize,c[1]-boxsize,0,r,r,tag=maxtag+1)
+        maxtag += 1
+    if np.linalg.norm(c-np.array([boxsize,0]))-r < 0.0:
+        m.addDisk(c[0]-boxsize,c[1]+boxsize,0,r,r,tag=maxtag+1)
+        maxtag += 1
+    if np.linalg.norm(c-np.array([boxsize,boxsize]))-r < 0.0:
+        m.addDisk(c[0]-boxsize,c[1]-boxsize,0,r,r,tag=maxtag+1)
+        maxtag += 1
+    return maxtag
 
+# Periodic geometry for disks of specified centers and radius
+def periodic_disks(nc,centers,m,boxsize,r,eps):
+
+    # Add disks and periodic copies where necessary
+    maxtag = 1+nc
+    for i,j in enumerate(centers):
+        m.occ.addDisk(j[0],j[1],0,r,r,tag=i+2)
+        maxtag = periodic_copy(m.occ,j,r,boxsize,maxtag)
+    
+    # Fragment overlapping shapes
+    out, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, maxtag+1)])
+    boxdimtag = pc[0][0]
+    boxtag = boxdimtag[1]
+    m.occ.synchronize()
+    
+    # Eliminate outsiders
+    vin = m.getEntitiesInBoundingBox(-eps/2,-eps/2,-eps/2,boxsize+eps/2,boxsize+eps/2,eps/2,2)
+    for v in vin:
+        out.remove(v)
+    m.occ.remove(out,True)
+    m.occ.synchronize()
+    
+    return boxdimtag,boxtag
+
+# Enforce periodic mesh on x-bounds
+def periodic_mesh(m,boxsize,eps):
+    
+    ents = m.getEntities(2)
+    boundary = m.getBoundary(ents)
+    for i,j in enumerate(boundary):
+        linepoints = np.array(m.getBoundingBox(j[0],j[1]))
+        xmin = linepoints[0]
+        xmax = linepoints[3]
+        ymin = linepoints[1]
+        if np.abs(xmin-xmax) < eps/2:
+            for k,l in enumerate(boundary):
+                if k != i:
+                    linepoints2 = np.array(m.getBoundingBox(l[0],l[1]))
+                    xmin2 = linepoints2[0]
+                    xmax2 = linepoints2[3]
+                    ymin2 = linepoints2[1]
+                    if np.abs(xmin2-xmax2) < eps/2 and np.abs((xmin2-xmin)-boxsize) < eps/2 and np.abs(ymin-ymin2) < eps/2:
+                        m.mesh.setPeriodic(1, [j[1]], [l[1]], [1, 0, 0, -boxsize, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+                        
 
 # %%
 """
@@ -314,9 +357,7 @@ gmsh.initialize()
 
 gmsh.model.add("random")
 
-#gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
-#gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
 
 # Bounding box
 boxsize = 1
@@ -324,15 +365,19 @@ gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
 
 # Circel radius and inimum spacing
 r = 0.2
-eps = r/10
+eps = r/20
 
-# Periodic translation arrays
+# Translations
 translationbase = np.array([-boxsize,0.0,boxsize])
 translations = np.array([[i,j] for i in translationbase for j in translationbase])
-translations = np.delete(translations,4,axis=0)
-corners = np.array([[i,j] for i in translationbase[::2] for j in translationbase[::2]])
+
+# Test case override
+#c = np.array([[0.0,0.0],[2*r+eps,0],[0,boxsize/2]])
+c = np.array([[0,0]])
+nc = len(c)
 
 # Add a randomly centred circle
+"""
 while True:
     #c = np.random.rand(2)*np.array([boxsize,boxsize]) # Random position
     c = np.array([0.0,0.0]) # Corner test case
@@ -341,35 +386,27 @@ while True:
         np.abs(c[1]-r) > eps and np.abs(c[1]+r-boxsize) > eps:
         gmsh.model.occ.addDisk(c[0],c[1],0,r,r,tag=2)
         break
+"""
 
-# Fragment overlapping shapes
-frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 3)])
-boxdimtag = pc[0][0]
-boxtag = boxdimtag[1]
-maxtag = np.max([i[1] for i in frags])
-
-# Also frament corner periodic translations
-for i in corners:
-    maxtag = corner_fragment(gmsh.model.occ,maxtag,i,boxsize)
-
-# Periodic shifts
-for i in translations:
-    frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,i,boxdimtag,eps)
-
-# Synchronise
-gmsh.model.occ.synchronize()
+# Add circles with periodic wrapping
+boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxsize,r,eps)
 
 # Identify physical groups for material assignment
-frags.remove(boxdimtag)
+ents = gmsh.model.getEntities(2)
+ents.remove(boxdimtag)
 gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
-gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
+gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="layer1")
+
+# Enforce periodic mesh on x-bounds
+periodic_mesh(gmsh.model,boxsize,eps)
 
 # Generate mesh
 gmsh.model.mesh.generate(2)
 
 # Acquire boundary node sets
 gmsh.model.occ.synchronize()
-bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model)
+bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model,boxsize)
+print(leftnodes,rightnodes)
 
 gmsh.write("gmsh.msh")
 write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
@@ -390,13 +427,12 @@ gmsh.initialize()
 
 gmsh.model.add("random")
 
-#gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
-#gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
+#gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
 
 # Microstructure specifications
-vfrac = 0.5
-r = 5.2e-6
+vfrac = 0.4
+r = 0.1
 area0 = np.pi*r**2
 nc = 15
 area1 = nc*area0
@@ -404,23 +440,21 @@ area2 = area1/vfrac
 
 # Bounding box
 boxsize = np.sqrt(area2)
-print(boxsize*1e6)
+print(boxsize)
 gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
 
 # Minimum spacing
-eps = r*0.05
+eps = r/20
 cbuff = 2*r + eps
 
-# Translation arrays
+# Translations
 translationbase = np.array([-boxsize,0.0,boxsize])
 translations = np.array([[i,j] for i in translationbase for j in translationbase])
-translations = np.delete(translations,4,axis=0)
-corners = np.array([[i,j] for i in translationbase[::2] for j in translationbase[::2]])
 
 # Add randomly centred circles
 # Loop over number of desired circles
 centers = np.empty((0,2))
-for i in range(nc):
+for i in trange(nc):
 
     # Continually try and insert circle within contstraints
     niter = 0
@@ -446,43 +480,39 @@ for i in range(nc):
                     if mindist < cbuff:
                         reject = True
         niter += 1
-        if niter > 100000:
+        if niter > 5000:
             raise Exception("Structure generation took too many iterations")
 
     # Add accepted circle
-    print(i,c)
     centers = np.r_[centers,c]
-    gmsh.model.occ.addDisk(c[0,0],c[0,1],0,r,r,tag=2+i)
 
-# Fragment overlapping shapes
-frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 2+nc)])
-boxdimtag = pc[0][0]
-boxtag = boxdimtag[1]
-maxtag = np.max([i[1] for i in frags])
+print(niter)
 
-# Also frament corner periodic translations
-for i in corners:
-    maxtag = corner_fragment(gmsh.model.occ,maxtag,i,boxsize)
+# Add circles with periodic wrapping
+boxdimtag,boxtag = periodic_disks(nc,centers,gmsh.model,boxsize,r,eps)
 
-# Periodic shifts
-for i in translations:
-    frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,i,boxdimtag,eps)
+# Identify physical groups for material assignment
+ents = gmsh.model.getEntities(2)
+ents.remove(boxdimtag)
+gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
+gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="layer1")
 
-# Synchronise
+# Enforce periodic mesh on x-bounds
+periodic_mesh(gmsh.model,boxsize,eps)
+
+# Scale mesh to microns
+scaling = 5.2e-6/0.1
+gmsh.model.occ.dilate(gmsh.model.getEntities(2),0,0,0,scaling,scaling,scaling)
 gmsh.model.occ.synchronize()
 
-#TODO Need to fix tag references to account for fragmenting
-frags.remove(boxdimtag)
-gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
-gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
-
-# We can then generate a 2D mesh...
-gmsh.option.setNumber("Mesh.MeshSizeMin",eps)
-gmsh.option.setNumber("Mesh.MeshSizeMax",r/5)
+# Generate mesh
+gmsh.option.setNumber("Mesh.MeshSizeMin",eps*scaling)
+gmsh.option.setNumber("Mesh.MeshSizeMax",r*scaling/5)
 gmsh.model.mesh.generate(2)
 
+# Acquire boundary node sets
 gmsh.model.occ.synchronize()
-bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model)
+bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model,boxsize*scaling)
 
 gmsh.write("gmsh.msh")
 write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
@@ -503,16 +533,14 @@ gmsh.initialize()
 
 gmsh.model.add("microstructure")
 
-#gmsh.option.setNumber("Mesh.SaveGroupsOfElements", 1)
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
-#gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
+#gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
 
 # Microstructure specifications
-#minspacefrac = 1e-3
 vfrac = 0.5
-r = 0.03
+r = 0.1
 area0 = np.pi*r**2
-nc = 100
+nc = 15
 area1 = nc*area0
 area2 = area1/vfrac
 
@@ -522,42 +550,38 @@ print(boxsize)
 gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
 
 # Minimum spacing
-eps = 1e-2*boxsize
+eps = r/20
 
 # Define buffers
-ybuff = r + eps
 cbuff = 2*r + eps
 
 # Run LS algorithm
 # Randomly insert N point particles
-c = np.random.rand(nc,2)*np.array([[boxsize,boxsize-2*ybuff]])
-c[:,1] += ybuff
+c = np.random.rand(nc,2)*np.array([[boxsize,boxsize]])
 
 # Randomly assign velocities
-v = np.random.rand(nc,2)*np.array([[2*boxsize,2*(boxsize-2*ybuff)]])
+v = np.random.rand(nc,2)*np.array([[2*boxsize,2*boxsize]])
 v[:,0] -= boxsize
-v[:,1] -= boxsize-2*ybuff
-
-plt.scatter(c[:,0],c[:,1])
-plt.show()
+v[:,1] -= boxsize
 
 # Define algorithm variables
-h = 1e-2 # Radius growth rate
+h = r # Radius growth rate
 t = 0 # Time
 rt = 0 # r(t)
-ymax = boxsize - eps/2 # Max y-coordinate
-ymin = eps/2 # Min y-coordinate
 rf = r + eps/2 # Final radius, including minimum spacing
 tf = rf/h # Final time
-wallhits = np.ones(nc)*np.inf
 parthits = np.ones((nc,nc))*np.inf
 cp = np.zeros((nc,2))
-print(ymin,ymax)
 niter = 0
 
-# Periodic wrapping of x-coordinate
-def xwrap(point):
+# Output times
+tout = np.linspace(1e-3,tf,10)
+radii = tout*h
+
+# Periodic wrapping of coordinates
+def wrap(point):
     point[0] -= np.floor(point[0]/boxsize)*boxsize
+    point[1] -= np.floor(point[1]/boxsize)*boxsize
     return point
 
 # Collision time for particles with each other
@@ -580,124 +604,41 @@ def ppColl(ci,cj,vi,vj,h,rt):
 
 # Simulate growth and collisions till circles have grown to r + eps/2
 advancing = True
-while advancing and niter < 1000000:
-
-    # List of wall collisions
-    for i in range(nc):
-        if v[i,1] < 0.0:
-            bound = ymin
-        else:
-            bound = ymax
-        wallhits[i] = (bound - np.sign(v[i,1])*rt - c[i,1])/(v[i,1]+np.sign(v[i,1])*h)
-        cp[i] = xwrap(c[i] + v[i]*wallhits[i] + np.sign(v[i,1])*np.array([0,rt+h*wallhits[i]]))
-
-    # Find minimum
-    bouncer = np.argmin(wallhits)
-    time = wallhits[bouncer]
-    wallhit = True
+while advancing and niter < 100000:
 
     # Get particle-particle collisions
     for i in range(nc):
         for j in range(i):
-            # Get central time
+            # Get collision times with each periodic translation
             tcoll = ppColl(c[i],c[j],v[i],v[j],h,rt)
             tcoll = np.minimum(ppColl(c[i]-np.array([boxsize,0]),c[j],v[i],v[j],h,rt),tcoll)
             parthits[i,j] = np.minimum(ppColl(c[i],c[j]-np.array([boxsize,0]),v[i],v[j],h,rt),tcoll)
-            if parthits[i,j] < 0:
-                print(f'Times: {parthits[i,j]}, {ppColl(c[i],c[j],v[i],v[j],h,rt)}, \
-                {ppColl(c[i]-np.array([boxsize,0]),c[j],v[i],v[j],h,rt)}, {ppColl(c[i],c[j]-np.array([boxsize,0]),v[i],v[j],h,rt)}')
-                print(f'Particles: {i}, {j}')
-                print(f'Original positions: {c[i]}, {c[j]}')
-                # Propagate centers
-                c[i] = xwrap(c[i] + v[i]*time)
-                c[j] = xwrap(c[j] + v[j]*time)
-                dc = c[colliders[0]] - c[colliders[1]]
-                dc[0] -= round(dc[0] / boxsize) * boxsize
-                u = dc/np.linalg.norm(dc)
-                print(f'Velocities: {v[i]}, {v[j]}')
-                print(f'Final positions: {c[i]}, {c[j]}')
-                print(f'Impact point: {(c[i]+c[j])/2}')
-                print(f'Impact normal: {u}')
-                vpi = np.dot(u,v[i])*u
-                vti = v[i] - vpi
-                vpj = np.dot(u,v[j])*u
-                vtj = v[j] - vpj
-                print(f'Parallel velocities: {vpi}, {vpj}')
-                print(f'Tangential velocities: {vti}, {vtj}')
-                v[i] = vpj + vti
-                v[j] = vpi + vtj
-                print(f'Pre-boosts: {v[i]}, {v[j]}')
-                v[i] += 2*u*h
-                v[j] -= 2*u*h
-                print(f'Finals: {v[i]}, {v[j]}')
-                
-                print('')
-                break
 
-    # Find minimum and compare with wallhit time
+    # Find minimum
     colliders = np.unravel_index(parthits.argmin(), parthits.shape)
-    pptime = parthits[colliders]
-    if pptime < time:
-        wallhit = False
-        time = pptime
-
-
+    time = parthits[colliders]
+    
     # Check for final time
     if t + time > tf:
         time = tf - t 
         for i in range(nc):
-            c[i] = xwrap(c[i]+v[i]*time)
+            c[i] = wrap(c[i]+v[i]*time)
         advancing = False
     else:
-        if wallhit:
-            print(f'Particle: {bouncer}')
-            print(f'Original position: {c[bouncer]}')
-            c[bouncer] = xwrap(c[bouncer] + v[bouncer]*time) # Propagate c
-            u = (c[bouncer]-cp[bouncer])/np.linalg.norm(c[bouncer]-cp[bouncer])
-            print(f'Velocity: {v[bouncer]}')
-            print(f'Propagation time: {time}')
-            print(f'Final position: {c[bouncer]}')
-            print(f'Impact point: {cp[bouncer]}')
-            print(f'Impact normal: {u}')
-            print(f'Velocity normal: {v[bouncer]/np.linalg.norm(v[bouncer])}')
-            vp = np.dot(u,v[bouncer])*u
-            vt = v[bouncer] - vp
-            print(f'Parallel velocity: {vp}')
-            print(f'Tangential velocity: {vt}')
-            v[bouncer,1] *= -1
-            print(f'Pre-boost: {v[bouncer]}')
-            v[bouncer] += u*h
-            print(f'Final velocity: {v[bouncer]}')
-            print('')
-        
-        else:
-            print(f'Particles: {colliders[0]}, {colliders[1]}')
-            print(f'Propagation time: {time}')
-            print(f'Start and final radius: {rt}, {rt + time*h}')
-            print(f'Original positions: {c[colliders[0]]}, {c[colliders[1]]}')
-            # Propagate centers
-            c[colliders[0]] = xwrap(c[colliders[0]] + v[colliders[0]]*time)
-            c[colliders[1]] = xwrap(c[colliders[1]] + v[colliders[1]]*time)
-            dc = c[colliders[0]] - c[colliders[1]]
-            dc[0] -= round(dc[0] / boxsize) * boxsize
-            u = dc/np.linalg.norm(dc)
-            print(f'Velocities: {v[colliders[0]]}, {v[colliders[1]]}')
-            print(f'Final positions: {c[colliders[0]]}, {c[colliders[1]]}')
-            print(f'Impact point: {(c[colliders[0]]+c[colliders[1]])/2}')
-            print(f'Impact normal: {u}')
-            vpi = np.dot(u,v[colliders[0]])*u
-            vti = v[colliders[0]] - vpi
-            vpj = np.dot(u,v[colliders[1]])*u
-            vtj = v[colliders[1]] - vpj
-            print(f'Parallel velocities: {vpi}, {vpj}')
-            print(f'Tangential velocities: {vti}, {vtj}')
-            v[colliders[0]] = vpj + vti
-            v[colliders[1]] = vpi + vtj
-            print(f'Pre-boosts: {v[colliders[0]]}, {v[colliders[1]]}')
-            v[colliders[0]] += 2*u*h
-            v[colliders[1]] -= 2*u*h
-            print(f'Finals: {v[colliders[0]]}, {v[colliders[1]]}')
-            print('')
+        # Propagate centers
+        c[colliders[0]] = wrap(c[colliders[0]] + v[colliders[0]]*time)
+        c[colliders[1]] = wrap(c[colliders[1]] + v[colliders[1]]*time)
+        dc = c[colliders[0]] - c[colliders[1]]
+        dc[0] -= round(dc[0] / boxsize) * boxsize
+        u = dc/np.linalg.norm(dc)
+        vpi = np.dot(u,v[colliders[0]])*u
+        vti = v[colliders[0]] - vpi
+        vpj = np.dot(u,v[colliders[1]])*u
+        vtj = v[colliders[1]] - vpj
+        v[colliders[0]] = vpj + vti
+        v[colliders[1]] = vpi + vtj
+        v[colliders[0]] += 2*u*h
+        v[colliders[1]] -= 2*u*h
             
     if time < 0:
         print('exiting ', niter, t, rt)
@@ -705,59 +646,44 @@ while advancing and niter < 1000000:
     
     # Propagate non-bouncing centers
     for i in range(nc):
-        if (wallhit and i != bouncer) or ((not wallhit) and i != colliders[0] and i != colliders[1]):
-            c[i] = xwrap(c[i]+v[i]*time)
+        if not wallhit and i != colliders[0] and i != colliders[1]:
+            c[i] = wrap(c[i]+v[i]*time)
             
     # Update trackers
     t += time
     rt += h*time
     niter += 1
 
-    print(niter,t,rt)
-    print('')
+print(niter,t,rt)
 
-    # Cap time to ybuff time, else next collision
+# Add circles with periodic wrapping
+boxdimtag,boxtag = periodic_disks(nc,centers,gmsh.model,boxsize,r,eps)
 
-plt.scatter(c[:,0],c[:,1])
-plt.show()
+# Identify physical groups for material assignment
+ents = gmsh.model.getEntities(2)
+ents.remove(boxdimtag)
+gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
+gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="layer1")
 
-for i in range(nc):
-    #gmsh.model.occ.addDisk(c[i,0],c[i,1],0,r,r,tag=2+i)
-    gmsh.model.occ.addDisk(c[i,0],c[i,1],0,r,r,tag=2+i)
+# Enforce periodic mesh on x-bounds
+periodic_mesh(gmsh.model,boxsize,eps)
 
-# Fragment overlapping shapes
-frags, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, 2+nc)])
-boxdimtag = pc[0][0]
-boxtag = boxdimtag[1]
-maxtag = np.max([i[1] for i in frags])
-
-# Also frament corner periodic translations
-for i in corners:
-    maxtag = corner_fragment(gmsh.model.occ,maxtag,i,boxsize)
-
-# Periodic shifts
-for i in translations:
-    frags,boxdimtag, boxtag = periodic_shift(gmsh.model.occ,i,boxdimtag,eps)
-
-# Synchronise
+# Scale mesh to microns
+scaling = 5.2e-6/0.1
+gmsh.model.occ.dilate(gmsh.model.getEntities(2),0,0,0,scaling,scaling,scaling)
 gmsh.model.occ.synchronize()
 
-#TODO Need to fix tag references to account for fragmenting
-frags.remove(boxdimtag)
-gmsh.model.addPhysicalGroup(2, [boxtag], name="layer0")
-#gmsh.model.removeEntities([boxdimtag],True)
-gmsh.model.addPhysicalGroup(2, [i[1] for i in frags], name="layer1")
-
-# We can then generate a 2D mesh...
-gmsh.option.setNumber("Mesh.MeshSizeMin",eps)
-gmsh.option.setNumber("Mesh.MeshSizeMax",r/5)
+# Generate mesh
+gmsh.option.setNumber("Mesh.MeshSizeMin",eps*scaling)
+gmsh.option.setNumber("Mesh.MeshSizeMax",r*scaling/5)
 gmsh.model.mesh.generate(2)
 
+# Acquire boundary node sets
 gmsh.model.occ.synchronize()
-bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model)
+bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model,boxsize*scaling)
 
 gmsh.write("gmsh.msh")
-write_abaqus_diffusion(bottomnodes, topnodes, leftnodes, rightnodes)
+write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
 gmsh.fltk.run()
 gmsh.finalize()
 
