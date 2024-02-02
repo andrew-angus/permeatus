@@ -11,6 +11,7 @@ import fileinput as fi
 from pandas import unique
 import matplotlib.pyplot as plt
 from tqdm.notebook import trange
+import copy
 
 # %%
 """
@@ -473,7 +474,7 @@ for i in trange(nc):
             else:
                 reject = False
                 for center in centers:
-                    mindist = np.linalg.norm(c[0]-center)
+                    mindist = np.inf
                     for translator in translations:
                         dist = np.linalg.norm(c[0]+translator-center)
                         mindist = np.minimum(dist,mindist)
@@ -537,7 +538,7 @@ gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
 #gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
 
 # Microstructure specifications
-vfrac = 0.5
+vfrac = 0.8
 r = 0.1
 area0 = np.pi*r**2
 nc = 15
@@ -571,12 +572,17 @@ rt = 0 # r(t)
 rf = r + eps/2 # Final radius, including minimum spacing
 tf = rf/h # Final time
 parthits = np.ones((nc,nc))*np.inf
-cp = np.zeros((nc,2))
 niter = 0
 
 # Output times
-tout = np.linspace(1e-3,tf,10)
+tout = np.linspace(1e-1,tf,10)
 radii = tout*h
+output = 0
+cout = {}
+
+# Translations
+translationbase = np.array([-boxsize,0.0,boxsize])
+translations = np.array([[i,j] for i in translationbase for j in translationbase])
 
 # Periodic wrapping of coordinates
 def wrap(point):
@@ -604,32 +610,48 @@ def ppColl(ci,cj,vi,vj,h,rt):
 
 # Simulate growth and collisions till circles have grown to r + eps/2
 advancing = True
-while advancing and niter < 100000:
+while advancing:
 
     # Get particle-particle collisions
     for i in range(nc):
         for j in range(i):
-            # Get collision times with each periodic translation
-            tcoll = ppColl(c[i],c[j],v[i],v[j],h,rt)
-            tcoll = np.minimum(ppColl(c[i]-np.array([boxsize,0]),c[j],v[i],v[j],h,rt),tcoll)
-            parthits[i,j] = np.minimum(ppColl(c[i],c[j]-np.array([boxsize,0]),v[i],v[j],h,rt),tcoll)
+            # Get collision times with each periodic translation and take minimum
+            parthits[i,j] = np.inf
+            for translator in translations:
+                tcoll = ppColl(c[i]+translator,c[j],v[i],v[j],h,rt)
+                parthits[i,j] = np.minimum(parthits[i,j],tcoll)
 
     # Find minimum
     colliders = np.unravel_index(parthits.argmin(), parthits.shape)
     time = parthits[colliders]
     
-    # Check for final time
-    if t + time > tf:
-        time = tf - t 
+    # Check for output time
+    if t + time > tout[output]:
+        time = tout[output] - t 
         for i in range(nc):
             c[i] = wrap(c[i]+v[i]*time)
-        advancing = False
+        cout[output] = copy.deepcopy(c)
+        output += 1
+        print(output,niter,t+time,rt+h*time)
+        if output == len(tout):
+            advancing = False
+        
+        # Plot status
+        fig, ax = plt.subplots()
+        for i in c:
+            circle = plt.Circle((i[0], i[1]), rt+h*time,label=f't = {t+time} s')
+            ax.add_patch(circle)
+        ax.set_box_aspect(1)
+        plt.xlim(0,boxsize)
+        plt.ylim(0,boxsize)
+        plt.show()
     else:
         # Propagate centers
         c[colliders[0]] = wrap(c[colliders[0]] + v[colliders[0]]*time)
         c[colliders[1]] = wrap(c[colliders[1]] + v[colliders[1]]*time)
         dc = c[colliders[0]] - c[colliders[1]]
         dc[0] -= round(dc[0] / boxsize) * boxsize
+        dc[1] -= round(dc[1] / boxsize) * boxsize
         u = dc/np.linalg.norm(dc)
         vpi = np.dot(u,v[colliders[0]])*u
         vti = v[colliders[0]] - vpi
@@ -640,24 +662,29 @@ while advancing and niter < 100000:
         v[colliders[0]] += 2*u*h
         v[colliders[1]] -= 2*u*h
             
-    if time < 0:
-        print('exiting ', niter, t, rt)
-        break
-    
-    # Propagate non-bouncing centers
-    for i in range(nc):
-        if not wallhit and i != colliders[0] and i != colliders[1]:
-            c[i] = wrap(c[i]+v[i]*time)
+        if time < 0:
+            print('exiting ', niter, t, rt)
+            break
+        
+        # Propagate non-colliding centers
+        for i in range(nc):
+            if i != colliders[0] and i != colliders[1]:
+                c[i] = wrap(c[i]+v[i]*time)
             
     # Update trackers
     t += time
     rt += h*time
     niter += 1
 
+    # Check
+    if niter > 10000:
+        print(niter,t,rt)
+        raise Exception("Structure generation took too many iterations")
+
 print(niter,t,rt)
 
 # Add circles with periodic wrapping
-boxdimtag,boxtag = periodic_disks(nc,centers,gmsh.model,boxsize,r,eps)
+boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxsize,r,eps)
 
 # Identify physical groups for material assignment
 ents = gmsh.model.getEntities(2)
@@ -669,7 +696,7 @@ gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="layer1")
 periodic_mesh(gmsh.model,boxsize,eps)
 
 # Scale mesh to microns
-scaling = 5.2e-6/0.1
+scaling = 5.2e-6/r
 gmsh.model.occ.dilate(gmsh.model.getEntities(2),0,0,0,scaling,scaling,scaling)
 gmsh.model.occ.synchronize()
 
@@ -688,4 +715,3 @@ gmsh.fltk.run()
 gmsh.finalize()
 
 # %%
-0.001126278067159134
