@@ -12,6 +12,7 @@ from pandas import unique
 import matplotlib.pyplot as plt
 from tqdm.notebook import trange
 import copy
+from fractions import Fraction
 
 # %%
 """
@@ -21,7 +22,8 @@ import copy
 # %%
 # Get boundary node sets in 2D box setups
 def boundary_nodes_2d(m,boxsize):
-    boundary = m.getBoundary(gmsh.model.getEntities(2))
+    
+    # Set up empty node and coordinate lists for each boundary
     leftnodes = np.empty(0)
     leftcoords = np.empty(0)
     rightnodes = np.empty(0)
@@ -30,9 +32,19 @@ def boundary_nodes_2d(m,boxsize):
     topcoords = np.empty(0)
     bottomnodes = np.empty(0)
     bottomcoords = np.empty(0)
+
+    # Get boundary entities
+    boundary = m.getBoundary(gmsh.model.getEntities(2))
+
+    # Loop through boundary lines
     for dim, tag in boundary:
+
+        # Get nodes and coordinates for this line
         nodeTags, coord, parametricCoord = m.mesh.getNodes(dim, np.abs(tag), includeBoundary=True)
         coords = np.reshape(coord, (len(coord)//3, 3))
+
+        # Determine which boundary the line resides on
+        # and store nodes/coordinates in associated list
         main_coord = np.argmax(np.abs(np.sum(np.diff(coords,axis=0),axis=0)))
         if main_coord == 0:
             if np.isclose(coord[1],0.0):
@@ -48,7 +60,8 @@ def boundary_nodes_2d(m,boxsize):
             elif np.isclose(coord[0],boxsize):
                 rightnodes = np.r_[rightnodes,nodeTags]
                 rightcoords = np.r_[rightcoords, coords[:,main_coord]]
-    
+
+    # Sort node lists by coordinates
     sorts = np.argsort(bottomcoords)
     bottomcoords = bottomcoords[sorts]
     bottomnodes = unique(bottomnodes[sorts]).astype(np.intc)
@@ -62,13 +75,20 @@ def boundary_nodes_2d(m,boxsize):
     rightcoords = rightcoords[sorts]
     rightnodes = unique(rightnodes[sorts][1:-1]).astype(np.intc)
 
+    # Return node lists
     return bottomnodes, topnodes, leftnodes, rightnodes
 
+# Check that disk outer surface is not too close to a box boundary
+# which would distort mesh
 def bound_proximity_check_2d(c,r,eps,boxsize):
+
+    # Check bottom, left, top, right bounds
     leftprox = np.abs(c[0]-r) > eps
     rightprox = np.abs(c[0]+r-boxsize) > eps
     bottomprox = np.abs(c[1]-r) > eps
     topprox = np.abs(c[1]+r-boxsize) > eps
+
+    # Check corners
     bottomleftprox = np.abs(np.linalg.norm(c)-r) > eps
     br = np.array([boxsize,0])
     bottomrightprox = np.abs(np.linalg.norm(c-br)-r) > eps
@@ -76,10 +96,16 @@ def bound_proximity_check_2d(c,r,eps,boxsize):
     toprightprox = np.abs(np.linalg.norm(c-tr)-r) > eps
     tl = np.array([0,boxsize])
     topleftprox = np.abs(np.linalg.norm(c-tl)-r) > eps
+
+    # Return combined check
     return leftprox and rightprox and bottomprox and topprox \
         and bottomleftprox and bottomrightprox and topleftprox and toprightprox
-    
+
+# Add periodic copies of disks
 def periodic_copy(m,c,r,boxsize,maxtag):
+
+    # Check for disk overlapping boundaries in all 8 periodic copies
+    # Add translated disk if so
     if c[0]-r < 0.0:
         m.addDisk(c[0]+boxsize,c[1],0,r,r,tag=maxtag+1)
         maxtag += 1
@@ -116,8 +142,18 @@ def periodic_disks(nc,centers,m,boxsize,r,eps):
         maxtag = periodic_copy(m.occ,j,r,boxsize,maxtag)
     
     # Fragment overlapping shapes
-    out, pc = gmsh.model.occ.fragment([(2, 1)], [(2, i) for i in range(2, maxtag+1)])
-    boxdimtag = pc[0][0]
+    out, pc = m.occ.fragment([(2, 1)], [(2, i) for i in range(2, maxtag+1)])
+
+    # Recover the bulk box tag by looking for unique child
+    for i in pc[0]:
+        bulkbox = True
+        for j in pc[1:]:
+            for k in j:
+                if i == k:
+                    bulkbox = False
+        if bulkbox:
+            boxdimtag = i
+            break
     boxtag = boxdimtag[1]
     m.occ.synchronize()
     
@@ -132,24 +168,32 @@ def periodic_disks(nc,centers,m,boxsize,r,eps):
 
 # Enforce periodic mesh on x-bounds
 def periodic_mesh(m,boxsize,eps):
-    
+
+    # Loop through boundary lines
     ents = m.getEntities(2)
     boundary = m.getBoundary(ents)
     for i,j in enumerate(boundary):
+
+        # Get start and end coordinates of line
         linepoints = np.array(m.getBoundingBox(j[0],j[1]))
         xmin = linepoints[0]
         xmax = linepoints[3]
         ymin = linepoints[1]
+        
+        # Check for vertical line
         if np.abs(xmin-xmax) < eps/2:
+
+            # Loop over all other boundary lines
             for k,l in enumerate(boundary):
                 if k != i:
                     linepoints2 = np.array(m.getBoundingBox(l[0],l[1]))
                     xmin2 = linepoints2[0]
                     xmax2 = linepoints2[3]
                     ymin2 = linepoints2[1]
+
+                    # Check for line directly opposite to set periodic boundary conditions
                     if np.abs(xmin2-xmax2) < eps/2 and np.abs((xmin2-xmin)-boxsize) < eps/2 and np.abs(ymin-ymin2) < eps/2:
                         m.mesh.setPeriodic(1, [j[1]], [l[1]], [1, 0, 0, -boxsize, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
-                        
 
 # %%
 """
@@ -171,6 +215,7 @@ def nodeset(f,nodes):
 # Abaqus diffusion sim input file production
 #TODO add variable inputs for material properties, timepoints, and BC magnitudes (best integrating with permeatus)
 def write_abaqus_diffusion(sourcenodes,sinknodes,leftnodes,rightnodes,fname="gmsh.inp"):
+    
     # Replace element types with diffusion
     gmsh.write(fname)
     with fi.input(fname,inplace=True) as f:
@@ -194,7 +239,6 @@ def write_abaqus_diffusion(sourcenodes,sinknodes,leftnodes,rightnodes,fname="gms
         f.write('2 \n')
         f.write("lwall, 11, 1. \n")
         f.write("rwall, 11, -1. \n")
-
     
         # Define materials
         f.write(f'*Material, name=layer0\n')
@@ -232,10 +276,6 @@ def write_abaqus_diffusion(sourcenodes,sinknodes,leftnodes,rightnodes,fname="gms
         f.write(f'*Element Output, position=NODES, directions=YES\n')
         f.write(f'CONC, MFL\n')
         f.write(f'*End Step\n')
-    
-    # Check
-    #with open(fname,"r") as f:
-    #    print(f.read())
 
 # %%
 """
@@ -307,25 +347,14 @@ sourcenodes = gmsh.model.mesh.getElements(1,1)[-1][0]
 sinknodes = gmsh.model.mesh.getElements(1,6)[-1][0]
 leftnodes = np.append(gmsh.model.mesh.getElements(1,7)[-1][0], gmsh.model.mesh.getElements(1,4)[-1][0]) 
 rightnodes = np.append(gmsh.model.mesh.getElements(1,2)[-1][0], gmsh.model.mesh.getElements(1,5)[-1][0])
-print(sourcenodes)
-print(sinknodes)
-print(leftnodes)
 leftnodes = np.array([i for i in leftnodes if i not in sourcenodes])
 leftnodes = np.array([i for i in leftnodes if i not in sinknodes])
-print(leftnodes)
-print(rightnodes)
 rightnodes = np.array([i for i in rightnodes if i not in sourcenodes])
 rightnodes = np.array([i for i in rightnodes if i not in sinknodes])
-print(rightnodes)
 sourcenodes = unique(sourcenodes)
 sinknodes = unique(sinknodes)
 leftnodes = unique(leftnodes)
 rightnodes = unique(np.flip(rightnodes))
-print(sourcenodes)
-print(sinknodes)
-print(leftnodes)
-print(rightnodes)
-#print(gmsh.model.mesh.getElements())
 
 # Save for opening in gmsh
 gmsh.write("gmsh2layer.msh")
@@ -341,12 +370,7 @@ gmsh.finalize()
 
 # %%
 """
-# Box with one central hole
-"""
-
-# %%
-"""
-# Box with random hole
+# Box with periodic holes
 """
 
 # %%
@@ -356,8 +380,8 @@ except:
     pass
 gmsh.initialize()
 
+# Add model and set options
 gmsh.model.add("random")
-
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
 
 # Bounding box
@@ -372,22 +396,9 @@ eps = r/20
 translationbase = np.array([-boxsize,0.0,boxsize])
 translations = np.array([[i,j] for i in translationbase for j in translationbase])
 
-# Test case override
-#c = np.array([[0.0,0.0],[2*r+eps,0],[0,boxsize/2]])
-c = np.array([[0,0]])
+# Add circles
+c = np.array([[0.0,0.0],[boxsize/2,boxsize/2]])
 nc = len(c)
-
-# Add a randomly centred circle
-"""
-while True:
-    #c = np.random.rand(2)*np.array([boxsize,boxsize]) # Random position
-    c = np.array([0.0,0.0]) # Corner test case
-    # Check for minimum distance between circle exterior and bounding box
-    if np.abs(c[0]-r) > eps and np.abs(c[0]+r-boxsize) > eps and \
-        np.abs(c[1]-r) > eps and np.abs(c[1]+r-boxsize) > eps:
-        gmsh.model.occ.addDisk(c[0],c[1],0,r,r,tag=2)
-        break
-"""
 
 # Add circles with periodic wrapping
 boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxsize,r,eps)
@@ -407,8 +418,8 @@ gmsh.model.mesh.generate(2)
 # Acquire boundary node sets
 gmsh.model.occ.synchronize()
 bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model,boxsize)
-print(leftnodes,rightnodes)
 
+# Write output and finalise
 gmsh.write("gmsh.msh")
 write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
 gmsh.fltk.run()
@@ -426,10 +437,10 @@ except:
     pass
 gmsh.initialize()
 
+# Add model and set options
 gmsh.model.add("random")
-
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
-#gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
 
 # Microstructure specifications
 vfrac = 0.4
@@ -471,6 +482,7 @@ for i in trange(nc):
                 reject = False
                         
             # Afterwards check against distance between previous circles
+            # and their periodic translations
             else:
                 reject = False
                 for center in centers:
@@ -487,8 +499,6 @@ for i in trange(nc):
     # Add accepted circle
     centers = np.r_[centers,c]
 
-print(niter)
-
 # Add circles with periodic wrapping
 boxdimtag,boxtag = periodic_disks(nc,centers,gmsh.model,boxsize,r,eps)
 
@@ -501,9 +511,10 @@ gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="layer1")
 # Enforce periodic mesh on x-bounds
 periodic_mesh(gmsh.model,boxsize,eps)
 
-# Scale mesh to microns
-scaling = 5.2e-6/0.1
-gmsh.model.occ.dilate(gmsh.model.getEntities(2),0,0,0,scaling,scaling,scaling)
+# Scale mesh to microns (ignored for now)
+scaling = 1
+#scaling = 5.2e-6/0.1
+#gmsh.model.occ.dilate(gmsh.model.getEntities(2),0,0,0,scaling,scaling,scaling)
 gmsh.model.occ.synchronize()
 
 # Generate mesh
@@ -515,6 +526,7 @@ gmsh.model.mesh.generate(2)
 gmsh.model.occ.synchronize()
 bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model,boxsize*scaling)
 
+# Write mesh and finalise
 gmsh.write("gmsh.msh")
 write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
 gmsh.fltk.run()
@@ -532,20 +544,21 @@ except:
     pass
 gmsh.initialize()
 
-gmsh.model.add("microstructure")
 
+# Add model and set options
+gmsh.model.add("microstructure")
 gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
-#gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
 
 # Microstructure specifications
-vfrac = 0.8
-r = 0.1
+vfrac = 0.6 # Volume fraction
+r = 0.1 # Circle radii
+nc = 15 # Number of circles
+
+# Bounding box - scale to desired volume fraction
 area0 = np.pi*r**2
-nc = 15
 area1 = nc*area0
 area2 = area1/vfrac
-
-# Bounding box
 boxsize = np.sqrt(area2)
 print(boxsize)
 gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
@@ -556,7 +569,7 @@ eps = r/20
 # Define buffers
 cbuff = 2*r + eps
 
-# Run LS algorithm
+# LS algorithm
 # Randomly insert N point particles
 c = np.random.rand(nc,2)*np.array([[boxsize,boxsize]])
 
@@ -566,16 +579,16 @@ v[:,0] -= boxsize
 v[:,1] -= boxsize
 
 # Define algorithm variables
-h = r # Radius growth rate
 t = 0 # Time
 rt = 0 # r(t)
 rf = r + eps/2 # Final radius, including minimum spacing
+h = rf # Radius growth rate
 tf = rf/h # Final time
-parthits = np.ones((nc,nc))*np.inf
-niter = 0
+parthits = np.ones((nc,nc))*np.inf # Matrix of particle collision times
+niter = 0 # Iteration counter
 
 # Output times
-tout = np.linspace(1e-1,tf,10)
+tout = np.linspace(1e-1,tf,100)
 radii = tout*h
 output = 0
 cout = {}
@@ -621,7 +634,7 @@ while advancing:
                 tcoll = ppColl(c[i]+translator,c[j],v[i],v[j],h,rt)
                 parthits[i,j] = np.minimum(parthits[i,j],tcoll)
 
-    # Find minimum
+    # Find overall minimum collision time
     colliders = np.unravel_index(parthits.argmin(), parthits.shape)
     time = parthits[colliders]
     
@@ -632,23 +645,14 @@ while advancing:
             c[i] = wrap(c[i]+v[i]*time)
         cout[output] = copy.deepcopy(c)
         output += 1
-        print(output,niter,t+time,rt+h*time)
         if output == len(tout):
             advancing = False
-        
-        # Plot status
-        fig, ax = plt.subplots()
-        for i in c:
-            circle = plt.Circle((i[0], i[1]), rt+h*time,label=f't = {t+time} s')
-            ax.add_patch(circle)
-        ax.set_box_aspect(1)
-        plt.xlim(0,boxsize)
-        plt.ylim(0,boxsize)
-        plt.show()
     else:
-        # Propagate centers
+        # Propagate centers of colliding particles
         c[colliders[0]] = wrap(c[colliders[0]] + v[colliders[0]]*time)
         c[colliders[1]] = wrap(c[colliders[1]] + v[colliders[1]]*time)
+
+        # Resolve collision
         dc = c[colliders[0]] - c[colliders[1]]
         dc[0] -= round(dc[0] / boxsize) * boxsize
         dc[1] -= round(dc[1] / boxsize) * boxsize
@@ -662,10 +666,6 @@ while advancing:
         v[colliders[0]] += 2*u*h
         v[colliders[1]] -= 2*u*h
             
-        if time < 0:
-            print('exiting ', niter, t, rt)
-            break
-        
         # Propagate non-colliding centers
         for i in range(nc):
             if i != colliders[0] and i != colliders[1]:
@@ -681,8 +681,6 @@ while advancing:
         print(niter,t,rt)
         raise Exception("Structure generation took too many iterations")
 
-print(niter,t,rt)
-
 # Add circles with periodic wrapping
 boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxsize,r,eps)
 
@@ -695,9 +693,10 @@ gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="layer1")
 # Enforce periodic mesh on x-bounds
 periodic_mesh(gmsh.model,boxsize,eps)
 
-# Scale mesh to microns
-scaling = 5.2e-6/r
-gmsh.model.occ.dilate(gmsh.model.getEntities(2),0,0,0,scaling,scaling,scaling)
+# Scale mesh to microns (ignored for now)
+scaling = 1
+#scaling = 5.2e-6/r
+#gmsh.model.occ.dilate(gmsh.model.getEntities(2),0,0,0,scaling,scaling,scaling)
 gmsh.model.occ.synchronize()
 
 # Generate mesh
@@ -709,6 +708,193 @@ gmsh.model.mesh.generate(2)
 gmsh.model.occ.synchronize()
 bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model,boxsize*scaling)
 
+# Write output and finalise
+gmsh.write("gmsh.msh")
+write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
+gmsh.fltk.run()
+gmsh.finalize()
+
+# %%
+"""
+## Animation of LS algorithm
+"""
+
+# %%
+# Nord colour scheme
+nord0 = '#2E3440'
+nord1 = '#3B4252'
+nord2 = '#434C5E'
+nord3 = '#4C566A'
+nord4 = '#D8DEE9'
+nord5 = '#E5E9F0'
+nord6 = '#ECEFF4'
+nord7 = '#8FBCBB'
+nord8 = '#88C0D0'
+nord9 = '#81A1C1'
+nord10 = '#5E81AC'
+nord11 = '#BF616A'
+nord12 = '#D08770'
+nord13 = '#EBCB8B'
+nord14 = '#A3BE8C'
+nord15 = '#B48EAD'
+
+# %%
+# Plot intermediate outputs
+for output in trange(len(tout)):
+    fig, ax = plt.subplots()
+    for i in translations:
+        x,y = np.meshgrid([0+i[0],boxsize+i[0]],[0+i[1],boxsize+i[1]])
+        ax.plot(x,y,color=nord0)
+        ax.plot(x.T,y.T,color=nord0)
+    for j,col in enumerate([nord7,nord8,nord9,nord10,nord11,nord12,nord13,nord14,nord15]):
+        for i in cout[output]:
+            circle = plt.Circle((i[0]+translations[j,0], i[1]+translations[j,1]), h*tout[output],label=f't = {tout[output]} s',color=col)
+            ax.add_patch(circle)
+    ax.set_box_aspect(1)
+    ax.set_axis_off()
+    plt.xlim(-eps-boxsize,2*boxsize+eps)
+    plt.ylim(-eps-boxsize,2*boxsize+eps)
+    plt.show()
+    #plt.savefig(f"msgen/msgen{output}.png")
+
+# %%
+"""
+# Reuss Bound Sim
+"""
+
+# %%
+try:
+    gmsh.finalize()
+except:
+    pass
+gmsh.initialize()
+
+# Add model and set options
+gmsh.model.add("reuss")
+gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
+gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+
+# Layers
+vfrac = 0.6 # Volume fraction
+nele = 40 # Number of elements along diffusion path
+vfracfrac = Fraction(vfrac).limit_denominator()
+nlayer = vfracfrac.denominator
+ndlayer = vfracfrac.numerator
+layerid = np.random.choice(nlayer,size=ndlayer,replace=False)
+
+# Construct layers
+boxsize = 1
+dx = boxsize/nlayer
+dy = boxsize
+for i in range(nlayer):
+    gmsh.model.occ.addRectangle(i*dx,0,0,dx,dy,tag=i)
+
+# Fragment overlappers
+out, pc = gmsh.model.occ.fragment([(2, i) for i in range(nlayer)], [(2, i) for i in range(nlayer)])
+
+# Identify physical groups for material assignment
+gmsh.model.occ.synchronize()
+ents = gmsh.model.getEntities(2)
+dlayers = [(2,i) for i in layerid]
+ents = [i for i in ents if i not in dlayers]
+gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="layer0")
+gmsh.model.addPhysicalGroup(2, [i[1] for i in dlayers], name="layer1")
+gmsh.model.occ.synchronize()
+
+# Define structured mesh with seeded edges
+eps = 1e-3/nlayer
+for i in range(2):
+    ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+i*dy,-eps,boxsize+eps,eps+i*dy,eps,1)
+    for j in ents:
+        gmsh.model.mesh.setTransfiniteCurve(j[1], 2)
+for i in range(nlayer+1):
+    ents = gmsh.model.getEntitiesInBoundingBox(-eps+i*dx,-eps,-eps,eps+i*dx,eps+dy,eps,1)
+    for j in ents:
+        gmsh.model.mesh.setTransfiniteCurve(j[1], nele)
+    if i != nlayer:
+        gmsh.model.mesh.setTransfiniteSurface(i)
+
+# Generate mesh
+gmsh.model.mesh.generate(2)
+gmsh.model.mesh.recombine()
+
+# Acquire boundary node sets
+gmsh.model.occ.synchronize()
+bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model,boxsize)
+
+# Write output and finalise
+gmsh.write("gmsh.msh")
+write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
+gmsh.fltk.run()
+gmsh.finalize()
+
+# %%
+"""
+# Voigt Bound Sim
+"""
+
+# %%
+try:
+    gmsh.finalize()
+except:
+    pass
+gmsh.initialize()
+
+
+# Add model and set options
+gmsh.model.add("voigt")
+gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
+gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+
+# Layers
+vfrac = 0.6 # Volume fraction
+nele = 40 # Number of elements along diffusion path
+vfracfrac = Fraction(vfrac).limit_denominator()
+nlayer = vfracfrac.denominator
+ndlayer = vfracfrac.numerator
+layerid = np.random.choice(nlayer,size=ndlayer,replace=False)
+
+# Construct layers
+boxsize = 1
+dx = boxsize
+dy = boxsize/nlayer
+for i in range(nlayer):
+    gmsh.model.occ.addRectangle(0,i*dy,0,dx,dy,tag=i)
+
+# Fragment overlappers
+out, pc = gmsh.model.occ.fragment([(2, i) for i in range(nlayer)], [(2, i) for i in range(nlayer)])
+
+# Identify physical groups for material assignment
+gmsh.model.occ.synchronize()
+ents = gmsh.model.getEntities(2)
+dlayers = [(2,i) for i in layerid]
+ents = [i for i in ents if i not in dlayers]
+gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="layer0")
+gmsh.model.addPhysicalGroup(2, [i[1] for i in dlayers], name="layer1")
+gmsh.model.occ.synchronize()
+
+# Define structured mesh with seeded edges
+eps = 1e-3/nlayer
+for i in range(2):
+    ents = gmsh.model.getEntitiesInBoundingBox(-eps+i*dx,-eps,-eps,eps+i*dx,eps+boxsize,eps,1)
+    for j in ents:
+        gmsh.model.mesh.setTransfiniteCurve(j[1], nele // nlayer + 1)
+for i in range(nlayer+1):
+    ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+i*dy,-eps,eps+dx,eps+i*dy,eps,1)
+    for j in ents:
+        gmsh.model.mesh.setTransfiniteCurve(j[1], 2)
+    if i != nlayer:
+        gmsh.model.mesh.setTransfiniteSurface(i)
+
+# Generate mesh
+gmsh.model.mesh.generate(2)
+gmsh.model.mesh.recombine()
+
+# Acquire boundary node sets
+gmsh.model.occ.synchronize()
+bottomnodes, topnodes, leftnodes, rightnodes = boundary_nodes_2d(gmsh.model,boxsize)
+
+# Write output and finalise
 gmsh.write("gmsh.msh")
 write_abaqus_diffusion(bottomnodes,topnodes,leftnodes,rightnodes)
 gmsh.fltk.run()
