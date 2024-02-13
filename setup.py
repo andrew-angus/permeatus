@@ -8,7 +8,7 @@ with open("README.md", "r") as fh:
 
 setup(
   name="permeatus",
-  version="0.0.1",
+  version="0.2.0",
 
   author="Andrew Angus",
   author_email="andrew.c.angus@warwick.ac.uk",
@@ -18,7 +18,7 @@ setup(
 
   url="https://github.com/andrewanguswarwick/permeatus",
 
-  description="Permeation modelling tools built around ABAQUS.",
+  description="Permeation modelling tools built around finite element analysis.",
   long_description=long_description,
   long_description_content_type="text/markdown",
 
@@ -26,5 +26,7 @@ setup(
   install_requires=[
     "numpy",
     "matplotlib",
+    "gmsh",
+    "pandas",
     ],
 )

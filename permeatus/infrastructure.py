@@ -6,17 +6,20 @@ import csv
 import matplotlib.pyplot as plt
 import os
 from importlib.resources import files
+from permeatus.utils import *
 import permeatus
+import subprocess
 
-# ABAQUS planar permeation class object
-class planar:
+# Infrastructure class object
+class infrastructure:
 
   # Initialisation arguments
-  def __init__(self,layers,r=None,L=None,touts=None,D=None,S=None,P=None,\
+  def __init__(self,layers,L=None,touts=None,D=None,S=None,P=None,\
                C0=None,C1=None,p0=None,p1=None,\
                N=None,tstep=None,ncpu=None,\
                Dc=None,Sc=None,Pc=None,Vd_frac=None,AR=None,\
-               Dd=None,Sd=None,Pd=None,model=None):
+               Dd=None,Sd=None,Pd=None,model=None,solver='abaqus',\
+               jobname='job',directory='.',verbose=True):
 
     # Defaults
     if ncpu is None:
@@ -30,7 +33,6 @@ class planar:
 
     # Assign attributes
     self.layers = layers
-    self.r = r
     self.L = L
     self.D = D
     self.S = S
@@ -53,6 +55,10 @@ class planar:
     self.Vd_frac = Vd_frac
     self.AR = AR
     self.model = model
+    self.solver = solver
+    self.jobname = jobname
+    self.directory = directory
+    self.verbose = verbose
 
     # Initialise derivative attributes
     if self.touts is not None:
@@ -124,54 +130,104 @@ class planar:
     elif self.C1 is not None:
       self.p1 = self.C1/mdiv(self.S[-1])
 
-  # Submit ABAQUS job
+  # Setup planar problem using gmsh
+  def __abaqus_input_file__(self):
+
+    # Initialise
+    gmsh.initialize()
+
+
+    # Add model and set options
+    gmsh.model.add(self.jobname)
+    gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
+    gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+
+    # Construct layers
+    dx = self.totL
+    dy = self.totL
+    ticker = 0
+    for i in range(self.layers):
+      gmsh.model.occ.addRectangle(0,ticker,0,dx,self.L[i],tag=i)
+      ticker += self.L[i]
+
+    # Fragment overlappers
+    out, pc = gmsh.model.occ.fragment([(2, i) for i in range(self.layers)], \
+        [(2, i) for i in range(self.layers)])
+
+    # Identify physical groups for material assignment
+    gmsh.model.occ.synchronize()
+    for i in range(self.layers):
+      gmsh.model.addPhysicalGroup(2, [i], name=f"material{i}")
+
+    # Define structured mesh with seeded edges
+    eps = 1e-3*np.min(np.append(self.L,dx))
+    ticker = 0
+    for i in range(self.layers+1):
+      ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+ticker,-eps,\
+          eps+dx,eps+ticker,eps,1)
+      gmsh.model.mesh.setTransfiniteCurve(ents[0][1], 2)
+      if i != self.layers:
+        ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+ticker,-eps,\
+          eps,eps+ticker+self.L[i],eps,1)
+        gmsh.model.mesh.setTransfiniteCurve(ents[0][1], self.N[i])
+        ents = gmsh.model.getEntitiesInBoundingBox(-eps+dx,-eps+ticker,-eps,\
+          eps+dx,eps+ticker+self.L[i],eps,1)
+        gmsh.model.mesh.setTransfiniteCurve(ents[0][1], self.N[i])
+        gmsh.model.mesh.setTransfiniteSurface(i)
+        ticker += self.L[i]
+
+    # Generate mesh
+    gmsh.model.mesh.generate(2)
+    gmsh.model.mesh.recombine()
+
+    # Acquire boundary node sets
+    gmsh.model.occ.synchronize()
+    bottomnodes, topnodes, leftnodes, rightnodes = \
+        boundary_nodes_2d(gmsh.model,dx,dy)
+
+    # Write output and finalise
+    write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
+        bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=False)
+    gmsh.fltk.run()
+    gmsh.finalize()
+
+  # Submit FEA job (only abaqus for now
   def submit_job(self):
 
-    # Update script template with variable inputs
-    template = files(permeatus).joinpath("planar_nlayer.txt")
-    with template.open() as i:
-      with open("abaqus_script.py","w") as o:
+    if self.solver == 'abaqus':
 
-        # Loop through template rows 
-        for row in i:
+      # Create input file
+      self.__abaqus_input_file__()
 
-          # Change desired lines
-          if  row.startswith("L = "):
-            o.write(f'L = {list(self.L)}\n')
-          elif row.startswith("r = "):
-            o.write(f'r = {self.r}\n')
-          elif row.startswith("D = "):
-            o.write(f'D = {list(self.D)}\n')
-          elif row.startswith("S = "):
-            o.write(f'S = {list(self.S)}\n')
-          elif row.startswith("N = "):
-            o.write(f'N = {list(self.N)}\n')
-          elif row.startswith("touts = "):
-            o.write(f'touts = {list(self.touts)}\n')
-          elif row.startswith("C0 = "):
-            o.write(f'C0 = {self.C0}\n')
-          elif row.startswith("C1 = "):
-            o.write(f'C1 = {self.C1}\n')
-          elif row.startswith("tstep = "):
-            o.write(f'tstep = {self.tstep}\n')
-          elif row.startswith("ncpu = "):
-            o.write(f'ncpu = {self.ncpu}\n')
+      # Remove output file to prevent appending to existing file
+      try:
+        os.system('rm C.csv')
+        os.system('rm J.csv')
+      except:
+        pass
 
-          # Write other lines unchanged
-          else:
-            o.write(row)
+      # Submit input file
+      print('Running ABAQUS...')
+      subprocess.call(\
+          ['abaqus','interactive',f'job={self.jobname}',f'cpus={self.ncpu}'])
 
-    # Remove output file to prevent appending to existing file
-    try:
-      os.system('rm C.csv')
-      os.system('rm J.csv')
-    except:
-      pass
+      # Obtain and update post-processing script
+      postscript = files(permeatus).joinpath("data/abaqus_postscript.txt")
+      with postscript.open() as i:
+        with open("abaqus_postscript.py","w") as o:
 
-    # Submit created script
-    print('Running ABAQUS...')
-    os.system('abaqus cae noGui=abaqus_script.py')
-    print('DONE')
+          # Loop through template rows 
+          for row in i:
+
+            # Change jobname
+            if  row.startswith("jobname = "):
+              o.write(f"jobname = '{self.jobname}'\n")
+
+            # Write other lines unchanged
+            else:
+              o.write(row)
+      subprocess.call(['abaqus','cae','noGui=abaqus_postscript.py'])
+      print('DONE')
 
   # Read field data output from abaqus csv file
   #TODO vector/tensor field reading

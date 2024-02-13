@@ -1,0 +1,25 @@
+# Author: Andrew Angus
+
+from visualization import *
+
+# Establish viewport
+myViewport = session.Viewport(name='viewport',
+    origin=(0.0, 0.0), width=679.98, height=459.45)
+session.viewports['viewport'].makeCurrent()
+session.viewports['viewport'].maximize()
+
+# Open odb
+jobname = 'sim'
+o1 = session.openOdb(name=jobname+'.odb', \
+    readOnly=False)
+session.viewports['viewport'].setValues(displayedObject=o1)
+odb = session.odbs[jobname+'.odb']
+
+# Write concentration and flux field reports to csv file
+session.fieldReportOptions.setValues(reportFormat=COMMA_SEPARATED_VALUES)
+session.writeFieldReport(fileName='C.csv', append=OFF,
+    sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=NODAL,
+    variable=(('CONC', ELEMENT_NODAL), ), stepFrame=ALL)
+session.writeFieldReport(fileName='J.csv', append=OFF,
+    sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=NODAL,
+    variable=(('MFL', ELEMENT_NODAL), ), stepFrame=ALL)
