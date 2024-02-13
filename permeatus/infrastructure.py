@@ -474,6 +474,8 @@ class infrastructure:
     self.J = J
     self.xc = xc
     self.C = C
+    self.dp = np.diff(p)/self.L
+    self.dC = np.array([(C[i+1]-C[i])/self.L[i//2] for i in range(0,len(C)-1,2)])
 
     if y == 'C':
       return xc, C, J
@@ -576,8 +578,12 @@ class infrastructure:
   def get_avg_coeffs(self):
 
     # Avg coefficients are function of molar flux, system size and BCs
-    self.Davg = self.J*self.totL/mdiv(self.C0-self.C1)
-    self.Pavg = self.J*self.totL/mdiv(self.p0-self.p1)
+    #self.Davg = self.J*self.totL/mdiv(self.C0-self.C1)
+    self.Davg = -self.J/np.sum(np.array([self.dC[i]*self.L[i]/self.totL \
+        for i in range(self.layers)]))
+    self.Pavg = -self.J/np.sum(np.array([self.dp[i]*self.L[i]/self.totL \
+        for i in range(self.layers)]))
+    #self.Pavg = self.J*self.totL/mdiv(self.p0-self.p1)
     self.Savg = self.Pavg/mdiv(self.Davg)
 
 # Avoid divisions by zero
