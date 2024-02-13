@@ -60,14 +60,45 @@ plt.rc('axes',prop_cycle=nord_cycler)
 
 # %%
 """
+# Homogenisation Module Tests
+"""
+
+# %%
+"""
+## Microstructure
+"""
+
+# %%
+perm = homogenisation(materials=2,D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),vFrac=np.array([0.4,0.6]),\
+              C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=8)
+
+# %%
+perm.cross_section_mesh(nc=15,algorithm='LS')
+
+# %%
+perm.submit_job()
+
+# %%
+perm.read_field('J')
+
+# %%
+# Volume average flux
+
+# %%
+"""
 # Permeatus 2-layer planar test
 """
 
 # %%
-perm = planar(layers=2,r=0.1,L=np.array([0.5,0.5]),D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),\
-              C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=1,N=[40,36])
+perm = infrastructure(materials=2,L=np.array([0.5,0.5]),D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),\
+              C0=1.0,C1=1e-6,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=8,N=[40,36])
+#perm = infrastructure(layers=2,L=np.array([0.4,0.6]),D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),\
+#              C0=1.0,C1=1e-6,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=1,N=[24,36])
 #perm = planar(layers=2,L=np.array([0.5,0.5]),P=[1.0,0.11],\
 #              p0=1.0,p1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=1,N=[40,36])
+
+# %%
+print(perm.ncpu)
 
 # %%
 perm.submit_job()
@@ -89,7 +120,7 @@ print(perm.field['J'][-1]['data'])
 # %%
 perm.plot_1d(showplot=False)
 plt.tight_layout()
-plt.savefig('abaqus2layer.pdf',bbox_inches='tight')
+#plt.savefig('abaqus2layer.pdf',bbox_inches='tight')
 plt.show()
 
 # %%
@@ -104,6 +135,38 @@ print(C[1:-1])
 
 # %%
 xc, p, J = perm.steady_state('p',plot=True)
+
+# %%
+print(p)
+
+# %%
+pdiff = np.diff(p)
+print(-pdiff[0]/perm.L[0],-pdiff[1]/perm.L[1],-(pdiff[0]+pdiff[1]))
+
+# %%
+print(C)
+Cdiff = np.diff(C)
+print(-Cdiff[0]/perm.L[0],-Cdiff[-1]/perm.L[1],-(Cdiff[0]+Cdiff[-1])/2)
+
+# %%
+perm.get_avg_coeffs()
+print(perm.Davg,perm.Savg,perm.Pavg)
+
+# %%
+print(perm.C0,perm.C1)
+print(perm.p0,perm.p1)
+
+# %%
+print(1/(perm.L[0]/perm.D[0]+perm.L[1]/perm.D[1]))
+
+# %%
+print(1/(perm.L[0]/perm.S[0]+perm.L[1]/perm.S[1]))
+
+# %%
+print(1/(perm.L[0]/perm.P[0]+perm.L[1]/perm.P[1]))
+
+# %%
+print((perm.L[0]/perm.S[0]+perm.L[1]/perm.S[1])/(perm.L[0]/perm.P[0]+perm.L[1]/perm.P[1]))
 
 # %%
 print(J)
@@ -455,6 +518,7 @@ y = perm.field['C'][-1]['y']
 C = np.ravel(perm.field['C'][-1]['data'])
 plt.scatter(x,y,c=C)
 plt.colorbar()
+plt.xlim(0.0,None)
 plt.show()
 
 # %%

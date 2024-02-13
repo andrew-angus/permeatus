@@ -10,11 +10,11 @@ from permeatus.utils import *
 import permeatus
 import subprocess
 
-# Infrastructure class object
-class infrastructure:
+# Layered 1D class object
+class layered1D:
 
   # Initialisation arguments
-  def __init__(self,layers,L=None,touts=None,D=None,S=None,P=None,\
+  def __init__(self,materials,L=None,touts=None,D=None,S=None,P=None,\
                C0=None,C1=None,p0=None,p1=None,\
                N=None,tstep=None,ncpu=None,\
                Dc=None,Sc=None,Pc=None,Vd_frac=None,AR=None,\
@@ -32,7 +32,7 @@ class infrastructure:
     #TODO Check validity of arguments 
 
     # Assign attributes
-    self.layers = layers
+    self.materials = materials
     self.L = L
     self.D = D
     self.S = S
@@ -81,9 +81,9 @@ class infrastructure:
 
     # Set dispersed phase coefficients to zeros if none
     if Pd is None and Dd is None:
-      Pd = np.zeros(layers)
-      Dd = np.zeros(layers)
-      Sd = np.zeros(layers)
+      Pd = np.zeros(materials)
+      Dd = np.zeros(materials)
+      Sd = np.zeros(materials)
     # Else get one from the other
     else:
       if self.Dd is not None:
@@ -131,7 +131,7 @@ class infrastructure:
       self.p1 = self.C1/mdiv(self.S[-1])
 
   # Setup planar problem using gmsh
-  def __abaqus_input_file__(self):
+  def create_mesh(self):
 
     # Initialise
     gmsh.initialize()
@@ -142,31 +142,31 @@ class infrastructure:
     gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
     gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
 
-    # Construct layers
+    # Construct materials
     dx = self.totL
     dy = self.totL
     ticker = 0
-    for i in range(self.layers):
+    for i in range(self.materials):
       gmsh.model.occ.addRectangle(0,ticker,0,dx,self.L[i],tag=i)
       ticker += self.L[i]
 
     # Fragment overlappers
-    out, pc = gmsh.model.occ.fragment([(2, i) for i in range(self.layers)], \
-        [(2, i) for i in range(self.layers)])
+    out, pc = gmsh.model.occ.fragment([(2, i) for i in range(self.materials)], \
+        [(2, i) for i in range(self.materials)])
 
     # Identify physical groups for material assignment
     gmsh.model.occ.synchronize()
-    for i in range(self.layers):
+    for i in range(self.materials):
       gmsh.model.addPhysicalGroup(2, [i], name=f"material{i}")
 
     # Define structured mesh with seeded edges
     eps = 1e-3*np.min(np.append(self.L,dx))
     ticker = 0
-    for i in range(self.layers+1):
+    for i in range(self.materials+1):
       ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+ticker,-eps,\
           eps+dx,eps+ticker,eps,1)
       gmsh.model.mesh.setTransfiniteCurve(ents[0][1], 2)
-      if i != self.layers:
+      if i != self.materials:
         ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+ticker,-eps,\
           eps,eps+ticker+self.L[i],eps,1)
         gmsh.model.mesh.setTransfiniteCurve(ents[0][1], self.N[i])
@@ -195,9 +195,6 @@ class infrastructure:
   def submit_job(self):
 
     if self.solver == 'abaqus':
-
-      # Create input file
-      self.__abaqus_input_file__()
 
       # Remove output file to prevent appending to existing file
       try:
@@ -306,12 +303,12 @@ class infrastructure:
         y = y[ysort]
         C = C[ysort]
 
-        if self.layers > 1:
+        if self.materials > 1:
           # Get interfacial points
-          Ly = np.zeros(self.layers+1)
+          Ly = np.zeros(self.materials+1)
           Ly[1:] += np.cumsum(self.L)
           iargsall = {}
-          p = np.zeros(len(C)-self.layers+1)
+          p = np.zeros(len(C)-self.materials+1)
           yp = np.unique(y)
           iargsold = [0,0]
           for i,j in enumerate(Ly[1:-1]):
@@ -398,13 +395,13 @@ class infrastructure:
 
     # Treat low layer number cases seperately
     # Evaluate pressure, concentration, and molar flux at relevant grid points
-    if self.layers == 1:
+    if self.materials == 1:
       p = np.array([self.p0,self.p1])
       J = k[0]*(self.p0-self.p1)
       C = np.array([self.C0,self.C1])
       x = np.linspace(0,self.totL,2)
       xc = np.linspace(0,self.totL,2)
-    elif self.layers == 2:
+    elif self.materials == 2:
       p = np.zeros(3)
       p[0] = self.p0
       p[-1] = self.p1
@@ -422,12 +419,12 @@ class infrastructure:
     # n-layer solve
     else:
       # Populate internal pressure problem arrays
-      b = np.zeros(self.layers-1)
+      b = np.zeros(self.materials-1)
       b[0] = self.p0*k[0]
       b[-1] = self.p1*k[-1]
       # coefficient matrix
-      a = -k[1:-1]*(np.eye(self.layers-1,k=1)+np.eye(self.layers-1,k=-1)) + \
-          (k[:-1]+k[1:])*np.eye(self.layers-1)
+      a = -k[1:-1]*(np.eye(self.materials-1,k=1)+np.eye(self.materials-1,k=-1)) + \
+          (k[:-1]+k[1:])*np.eye(self.materials-1)
 
       # Solve for internal pressures
       p_int = np.linalg.solve(a,b)
@@ -436,7 +433,7 @@ class infrastructure:
       J = k[0]*(self.p0-p_int[0])
 
       # Construct full pressure array
-      p = np.zeros(self.layers+1)
+      p = np.zeros(self.materials+1)
       p[0] = self.p0
       p[-1] = self.p1
       p[1:-1] = p_int
@@ -447,7 +444,7 @@ class infrastructure:
 
       # Calculate concentrations from pressures
       # x points
-      xc = np.zeros(2*self.layers)
+      xc = np.zeros(2*self.materials)
       xc[-1] = x[-1]
       xc[1:-2:2] = x[1:-1]
       xc[2:-1:2] = x[1:-1]
@@ -516,12 +513,12 @@ class infrastructure:
 
     # Hashin-Strikman bounds, tighter than Wiener assuming structural isotropy
     elif method == 'HS':
-      self.P_upper = np.zeros(self.layers)
-      self.D_upper = np.zeros(self.layers)
-      self.S_upper = np.zeros(self.layers)
-      self.P_lower = np.zeros(self.layers)
-      self.D_lower = np.zeros(self.layers)
-      self.S_lower = np.zeros(self.layers)
+      self.P_upper = np.zeros(self.materials)
+      self.D_upper = np.zeros(self.materials)
+      self.S_upper = np.zeros(self.materials)
+      self.P_lower = np.zeros(self.materials)
+      self.D_lower = np.zeros(self.materials)
+      self.S_lower = np.zeros(self.materials)
 
       # Calculate upper and lower bounds (although which is which is yet to be
       # be determined
@@ -538,9 +535,9 @@ class infrastructure:
       Sdplus = self.Sd + Vc_frac/mdiv(1/mdiv(self.Sc-self.Sd) \
           +self.Vd_frac/mdiv(3*self.Sd))
 
-      # Looping over layers required since relative magnitude \
+      # Looping over materials required since relative magnitude \
       # of each phases coefficients important
-      for i in range(self.layers):
+      for i in range(self.materials):
         if self.Pc[i] > self.Pd[i]:
           self.P_upper[i] = Pcplus[i]
           self.P_lower[i] = Pdplus[i]
@@ -577,13 +574,12 @@ class infrastructure:
   # Get average coefficients for multiple layered system
   def get_avg_coeffs(self):
 
-    # Avg coefficients are function of molar flux, system size and BCs
-    #self.Davg = self.J*self.totL/mdiv(self.C0-self.C1)
+    # Avg coefficients are function of molar flux, volume fraction and 
+    # steady-state gradients in each layer
     self.Davg = -self.J/np.sum(np.array([self.dC[i]*self.L[i]/self.totL \
-        for i in range(self.layers)]))
+        for i in range(self.materials)]))
     self.Pavg = -self.J/np.sum(np.array([self.dp[i]*self.L[i]/self.totL \
-        for i in range(self.layers)]))
-    #self.Pavg = self.J*self.totL/mdiv(self.p0-self.p1)
+        for i in range(self.materials)]))
     self.Savg = self.Pavg/mdiv(self.Davg)
 
 # Avoid divisions by zero
