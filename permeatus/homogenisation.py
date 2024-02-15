@@ -278,3 +278,157 @@ class homogenisation(layered1D):
         bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
     gmsh.fltk.run()
     gmsh.finalize()
+
+  # Create mesh of Reuss bound setup
+  def reuss_mesh(self,Ny=40):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('cross_section_mesh only implemented for 2 material system')
+
+    # Initialise
+    gmsh.initialize()
+
+    # Add model and set options
+    gmsh.model.add(self.jobname)
+    gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
+    gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+
+    # Layers
+    vfrac = self.vFrac[1] # Volume fraction
+    vfracfrac = Fraction(vfrac).limit_denominator()
+    nlayer = vfracfrac.denominator
+    ndlayer = vfracfrac.numerator
+    layerid = np.random.choice(nlayer,size=ndlayer,replace=False)
+
+    # Construct layers
+    boxsize = 1
+    dx = boxsize
+    dy = boxsize/nlayer
+    for i in range(nlayer):
+        gmsh.model.occ.addRectangle(0,i*dy,0,dx,dy,tag=i)
+
+    # Fragment overlappers
+    out, pc = gmsh.model.occ.fragment([(2, i) for i in range(nlayer)], \
+        [(2, i) for i in range(nlayer)])
+
+    # Identify physical groups for material assignment
+    gmsh.model.occ.synchronize()
+    ents = gmsh.model.getEntities(2)
+    dlayers = [(2,i) for i in layerid]
+    ents = [i for i in ents if i not in dlayers]
+    gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="material0")
+    gmsh.model.addPhysicalGroup(2, [i[1] for i in dlayers], name="material1")
+    gmsh.model.occ.synchronize()
+
+    # Define structured mesh with seeded edges
+    eps = 1e-3/nlayer
+    for i in range(2):
+        ents = gmsh.model.getEntitiesInBoundingBox(-eps+i*dx,-eps,-eps,eps+i*dx,eps+boxsize,eps,1)
+        for j in ents:
+            gmsh.model.mesh.setTransfiniteCurve(j[1], Ny // nlayer + 1)
+    for i in range(nlayer+1):
+        ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+i*dy,-eps,eps+dx,eps+i*dy,eps,1)
+        for j in ents:
+            gmsh.model.mesh.setTransfiniteCurve(j[1], 2)
+        if i != nlayer:
+            gmsh.model.mesh.setTransfiniteSurface(i)
+
+    # Generate mesh
+    gmsh.model.mesh.generate(2)
+    gmsh.model.mesh.recombine()
+
+    # Acquire boundary node sets
+    gmsh.model.occ.synchronize()
+    bottomnodes, topnodes, leftnodes, rightnodes = \
+        boundary_nodes_2d(gmsh.model,boxsize,boxsize)
+
+    # Write output and finalise
+    write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
+        bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
+    gmsh.fltk.run()
+    gmsh.finalize()
+
+  # Create mesh of Voigt bound setup
+  def voigt_mesh(self,Nx=20,Ny=40):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('cross_section_mesh only implemented for 2 material system')
+
+    # Initialise
+    gmsh.initialize()
+
+    # Add model and set options
+    gmsh.model.add(self.jobname)
+    gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
+    gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+
+    # Layers
+    vfrac = self.vFrac[1] # Volume fraction
+    vfracfrac = Fraction(vfrac).limit_denominator()
+    nlayer = vfracfrac.denominator
+    ndlayer = vfracfrac.numerator
+    layerid = np.random.choice(nlayer,size=ndlayer,replace=False)
+
+    # Construct layers
+    boxsize = 1
+    dx = boxsize/nlayer
+    dy = boxsize
+    for i in range(nlayer):
+      gmsh.model.occ.addRectangle(i*dx,0,0,dx,dy,tag=i)
+
+    # Fragment overlappers
+    out, pc = gmsh.model.occ.fragment([(2, i) for i in range(nlayer)], \
+        [(2, i) for i in range(nlayer)])
+
+    # Identify physical groups for material assignment
+    gmsh.model.occ.synchronize()
+    ents = gmsh.model.getEntities(2)
+    dlayers = [(2,i) for i in layerid]
+    ents = [i for i in ents if i not in dlayers]
+    gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="material0")
+    gmsh.model.addPhysicalGroup(2, [i[1] for i in dlayers], name="material1")
+    gmsh.model.occ.synchronize()
+
+    # Define structured mesh with seeded edges
+    eps = 1e-3/nlayer
+    for i in range(2):
+      ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+i*dy,-eps,boxsize+eps,eps+i*dy,eps,1)
+      for j in ents:
+        gmsh.model.mesh.setTransfiniteCurve(j[1], Nx // nlayer + 1)
+    for i in range(nlayer+1):
+      ents = gmsh.model.getEntitiesInBoundingBox(-eps+i*dx,-eps,-eps,eps+i*dx,eps+dy,eps,1)
+      for j in ents:
+        gmsh.model.mesh.setTransfiniteCurve(j[1], Ny)
+      if i != nlayer:
+        gmsh.model.mesh.setTransfiniteSurface(i)
+
+    # Generate mesh
+    gmsh.model.mesh.generate(2)
+    gmsh.model.mesh.recombine()
+
+    # Acquire boundary node sets
+    gmsh.model.occ.synchronize()
+    bottomnodes, topnodes, leftnodes, rightnodes = \
+        boundary_nodes_2d(gmsh.model,boxsize,boxsize)
+
+    # Write output and finalise
+    write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
+        bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
+    gmsh.fltk.run()
+    gmsh.finalize()
+
+  # Analytical Reuss bound
+  def reuss_bound(self):
+
+    self.D_eff = 1/np.sum(self.vFrac/self.D)
+    self.P_eff = 1/np.sum(self.vFrac/self.P)
+    self.S_eff = self.P_eff/self.D_eff
+
+  # Analytical Voigt bound
+  def voigt_bound(self):
+
+    self.D_eff = np.sum(self.vFrac*self.D)
+    self.P_eff = np.sum(self.vFrac*self.P)
+    self.S_eff = self.P_eff/self.D_eff

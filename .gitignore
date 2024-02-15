@@ -35,3 +35,7 @@ abaqus.rpt
 *.cid
 *.simdir
 *.simlog
+*.ipm
+*.geo
+*.msh
+*.jpg
