@@ -10,6 +10,7 @@ import copy
 import seaborn as sb
 from cycler import cycler
 from permeatus import *
+from andvaranaut import *
 
 # %%
 %load_ext autoreload
@@ -70,7 +71,118 @@ plt.rc('axes',prop_cycle=nord_cycler)
 
 # %%
 perm = homogenisation(materials=2,D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),vFrac=np.array([0.4,0.6]),\
-              C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0],tstep=0.001,ncpu=8)
+              C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0,3.0],tstep=0.001,ncpu=8)
+
+# %%
+perm.reuss_mesh(Nx=1,Ny=80)
+
+# %%
+perm.submit_job()
+
+# %%
+perm.read_field('J')
+
+# %%
+perm.read_field('C')
+
+# %%
+perm.read_field('p')
+
+# %%
+print(np.mean(perm.field['J'][-1]['data'][:,1]))
+
+# %%
+perm.reuss_bound()
+
+# %%
+print(perm.D_eff,perm.S_eff,perm.P_eff)
+
+# %%
+C = perm.field['C'][-1]['data']
+p = perm.field['p'][-1]['data']
+Cx = perm.field['C'][-1]['x']
+Cy = perm.field['C'][-1]['y']
+px = perm.field['p'][-1]['x']
+py = perm.field['p'][-1]['y']
+
+# %%
+g = GPMCMC(nx=2,ny=1,target=np.exp,priors=[st.norm(),st.norm()],verbose=True,kernel='RBF',noise=False)
+
+# %%
+g.set_data(np.c_[px,py],p)
+
+# %%
+g.change_conrevs([maxmin(g.x[:,i]) for i in range(2)],[meanstd(g.y[:,0])])
+#g.change_conrevs([maxmin(g.x[:,0]),wgp(['maxmin','kumaraswamy'],np.ones(2),g.x[:,1])],[wgp(['stdshift','sinharcsinh','meanstd'],np.ones(3),g.y[:,0])])
+#g.change_conrevs([wgp(['maxmin','kumaraswamy'],np.ones(2),g.x[:,i]) for i in range(2)],[wgp(['stdshift','sinharcsinh','meanstd'],np.ones(3),g.y[:,0])])
+#g.change_conrevs([maxmin(g.x[:,i]) for i in range(2)],[wgp(['stdshift','sal','sinharcsinh','meanstd'],np.ones(7),g.y[:,0])])
+g.change_model('Exponential',noise=False)
+
+# %%
+g.fit(iwgp=False,cwgp=False)
+
+# %%
+print(g.hypers)
+
+# %%
+lenC = len(C)
+lenp = len(p)
+perm.field['C'][-1]['S'] = np.zeros(lenC)
+perm.field['C'][-1]['grad'] = np.zeros(lenC)
+eps = 1e-3
+predy0 = py-eps
+predy1 = py+eps
+gradp = (g.predict(np.c_[px,py-eps])-g.predict(np.c_[px,py+eps]))/(2*eps)
+perm.field['p'][-1]['grad'] = copy.deepcopy(gradp)
+deletions = []
+for i in range(lenC):
+    for j in range(lenp):
+        if np.isclose(Cx[i],px[j]) and np.isclose(Cy[i],py[j]):
+            perm.field['C'][-1]['S'][i] = C[i]/p[j]
+            perm.field['C'][-1]['grad'][i] = gradp[j]*perm.field['C'][-1]['S'][i]
+        if np.isclose(Cy[i],0.0) or np.isclose(Cy[i],1.0):
+            deletions.append(i)
+for i in range(lenC):
+    for j in range(lenC):
+        if i != j and np.isclose(Cx[i],Cx[j]) and np.isclose(Cy[i],Cy[j]):
+            deletions.append(i)
+
+# %%
+plt.scatter(perm.field['C'][-1]['y'],perm.field['C'][-1]['data'])
+plt.scatter(perm.field['C'][-1]['y'],perm.field['C'][-1]['S'])
+plt.scatter(perm.field['C'][-1]['y'],perm.field['C'][-1]['grad'])
+plt.show()
+
+# %%
+plt.scatter(perm.field['p'][-1]['y'],perm.field['p'][-1]['data'])
+plt.scatter(perm.field['p'][-1]['y'],perm.field['p'][-1]['grad'])
+plt.ylim(-2,2)
+plt.show()
+
+# %%
+Cygrad = np.delete(perm.field['C'][-1]['y'],deletions,axis=0)
+gradC = np.delete(perm.field['C'][-1]['grad'],deletions,axis=0)
+
+# %%
+print(gradC)
+
+# %%
+plt.scatter(perm.field['C'][-1]['y'],perm.field['C'][-1]['data'])
+plt.scatter(perm.field['C'][-1]['y'],perm.field['C'][-1]['S'])
+plt.scatter(Cygrad,gradC)
+plt.show()
+
+# %%
+print(np.mean(gradC))
+
+# %%
+print(perm.D_eff,perm.S_eff,perm.P_eff)
+
+# %%
+print(perm.P_eff/np.mean(gradC))
+
+# %%
+0.15625/0.154
 
 # %%
 perm.cross_section_mesh(nc=15,algorithm='LS')

@@ -23,3 +23,6 @@ session.writeFieldReport(fileName='C.csv', append=OFF,
 session.writeFieldReport(fileName='J.csv', append=OFF,
     sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=NODAL,
     variable=(('MFL', ELEMENT_NODAL), ), stepFrame=ALL)
+session.writeFieldReport(fileName='p.csv', append=OFF,
+    sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=NODAL,
+    variable=(('NNC11', NODAL), ), stepFrame=ALL)

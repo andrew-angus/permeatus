@@ -259,6 +259,8 @@ def write_abaqus_diffusion(D,S,C0,C1,touts,tstep,\
         f.write(f'source, 11, 11, {C0}\n')
         f.write(f'*Restart, write, frequency=0\n')
         f.write(f'*Output, field, time points=timepoints\n')
+        f.write(f'*Node Output\n')
+        f.write(f'NNC,\n')
         f.write(f'*Element Output, position=NODES, directions=YES\n')
         f.write(f'CONC, MFL\n')
         f.write(f'*End Step\n')

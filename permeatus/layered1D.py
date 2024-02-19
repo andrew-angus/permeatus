@@ -200,6 +200,7 @@ class layered1D:
       try:
         os.system('rm C.csv')
         os.system('rm J.csv')
+        os.system('rm p.csv')
       except:
         pass
 
@@ -231,7 +232,7 @@ class layered1D:
   def read_field(self,target='C',targetdir=None):
 
     # Target check
-    targets = ['C','J']
+    targets = ['C','p','J']
     if target not in targets:
       raise Exception(f'target must be one of {targets}')
 
@@ -240,6 +241,9 @@ class layered1D:
     field = self.field[target]
     if target == 'C':
       fieldkeys = ['CONC']
+      fieldsize = 1
+    if target == 'p':
+      fieldkeys = ['NNC11']
       fieldsize = 1
     elif target == 'J':
       fieldsize = 2

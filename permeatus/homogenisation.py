@@ -280,7 +280,7 @@ class homogenisation(layered1D):
     gmsh.finalize()
 
   # Create mesh of Reuss bound setup
-  def reuss_mesh(self,Ny=40):
+  def reuss_mesh(self,Nx=2,Ny=80):
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -330,7 +330,7 @@ class homogenisation(layered1D):
     for i in range(nlayer+1):
         ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+i*dy,-eps,eps+dx,eps+i*dy,eps,1)
         for j in ents:
-            gmsh.model.mesh.setTransfiniteCurve(j[1], 2)
+            gmsh.model.mesh.setTransfiniteCurve(j[1], Nx + 1)
         if i != nlayer:
             gmsh.model.mesh.setTransfiniteSurface(i)
 
@@ -400,7 +400,7 @@ class homogenisation(layered1D):
     for i in range(nlayer+1):
       ents = gmsh.model.getEntitiesInBoundingBox(-eps+i*dx,-eps,-eps,eps+i*dx,eps+dy,eps,1)
       for j in ents:
-        gmsh.model.mesh.setTransfiniteCurve(j[1], Ny)
+        gmsh.model.mesh.setTransfiniteCurve(j[1], Ny + 1)
       if i != nlayer:
         gmsh.model.mesh.setTransfiniteSurface(i)
 
