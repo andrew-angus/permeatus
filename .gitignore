@@ -39,3 +39,4 @@ abaqus.rpt
 *.geo
 *.msh
 *.jpg
+tests/abaqus_postscript.py

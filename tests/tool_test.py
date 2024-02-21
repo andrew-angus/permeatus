@@ -71,7 +71,7 @@ plt.rc('axes',prop_cycle=nord_cycler)
 
 # %%
 perm = homogenisation(materials=2,D=np.array([1.0,0.1]),S=np.array([1.0,1.1]),vFrac=np.array([0.4,0.6]),\
-              C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0,3.0],tstep=0.001,ncpu=8)
+              C0=1.0,C1=0.0,touts=[0.001,0.05,0.2,2.0,4.0],tstep=0.001,ncpu=8)
 
 # %%
 perm.reuss_mesh(Nx=1,Ny=80)
@@ -104,6 +104,39 @@ Cx = perm.field['C'][-1]['x']
 Cy = perm.field['C'][-1]['y']
 px = perm.field['p'][-1]['x']
 py = perm.field['p'][-1]['y']
+Jy = perm.field['J'][-1]['data'][:,1]
+mats = perm.field['J'][-1]['material']
+
+# %%
+gradC = np.zeros_like(Jy)
+for i in range(len(gradC)):
+    gradC[i] = Jy[i]/-perm.D[mats[i]]
+
+# %%
+print(np.mean(gradC))
+print(np.mean(Jy)/(perm.C0-perm.C1))
+print(np.mean(Jy)/-np.mean(gradC))
+print(np.mean(gradC)/(perm.C1-perm.C0))
+
+# %%
+print(len(C),len(p),len(Jy))
+
+# %%
+print(perm.field['C'][-1]['node'])
+
+# %%
+a = np.random.randint(100,size=5)
+print(a)
+print(np.isin(1,a))
+
+# %%
+print([i for i in zip(C[:,0],perm.field['C'][-1]['node'])])
+
+# %%
+print(perm.field['C'][-1]['node'])
+
+# %%
+print(perm.nodesets)
 
 # %%
 g = GPMCMC(nx=2,ny=1,target=np.exp,priors=[st.norm(),st.norm()],verbose=True,kernel='RBF',noise=False)

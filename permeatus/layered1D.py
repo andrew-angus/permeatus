@@ -78,6 +78,7 @@ class layered1D:
     self.P_lower = None
     self.D_lower = None
     self.S_lower = None
+    self.nodesets = [None for i in range(self.materials)]
 
     # Set dispersed phase coefficients to zeros if none
     if Pd is None and Dd is None:
@@ -157,7 +158,7 @@ class layered1D:
     # Identify physical groups for material assignment
     gmsh.model.occ.synchronize()
     for i in range(self.materials):
-      gmsh.model.addPhysicalGroup(2, [i], name=f"material{i}")
+      gmsh.model.addPhysicalGroup(2, [i], tag=i, name=f"material{i}")
 
     # Define structured mesh with seeded edges
     eps = 1e-3*np.min(np.append(self.L,dx))
@@ -179,6 +180,10 @@ class layered1D:
     # Generate mesh
     gmsh.model.mesh.generate(2)
     gmsh.model.mesh.recombine()
+
+    # Save material node sets
+    for i in range(self.materials):
+      self.nodesets[i], coords = gmsh.model.mesh.getNodesForPhysicalGroup(2, i)
 
     # Acquire boundary node sets
     gmsh.model.occ.synchronize()
@@ -262,7 +267,7 @@ class layered1D:
         row = {i.strip():j for i,j in zip(row.keys(),row.values())}
 
         # Only store keys of interest
-        keys = ['Frame','X','Y']+fieldkeys
+        keys = ['Frame','Material Name','X','Y']+fieldkeys
         row = {i:row[i] for i in keys}
 
         # Split frame into increment and time and extract values
@@ -270,11 +275,18 @@ class layered1D:
         increment = int(splits[1].strip(':'))
         time = float(splits[-1])
 
+        # Get material if integration point output
+        if target in ['C','J']:
+          material = int(row['Material Name'].strip('MATERIAL'))
+        else:
+          material = -1
+
         # Check for new increment and initialise data dict
         if increment != inc:
           incc += 1
           field[incc] = {'t':time,'x':np.array([float(row['X'])]),\
-              'y':np.array([float(row['Y'])]), \
+              'y':np.array([float(row['Y'])]),\
+              'material':np.array([material]), \
               'data':np.array([[float(row[fieldkey]) for fieldkey in fieldkeys]])}
           inc = increment
 
@@ -282,11 +294,15 @@ class layered1D:
         else:
           field[incc]['x'] = np.r_[field[incc]['x'],float(row['X'])]
           field[incc]['y'] = np.r_[field[incc]['y'],float(row['Y'])]
+          field[incc]['material'] = np.r_[field[incc]['material'],material]
           field[incc]['data'] = np.r_[field[incc]['data'],\
               np.array([[float(row[fieldkey]) for fieldkey in fieldkeys]])]
 
-    # Store number of frames
-    #self.field['frames'] = incc+1
+      # Get material
+      #if target == 'C':
+      #  for i in range(self.frames:
+      #  for i in range(self.materials):
+      #    if np.isin(node,self.nodeSets
 
   # Plot 1D solution
   def plot_1d(self,target='C',showplot=True,timemask=None,plotlabels=None):

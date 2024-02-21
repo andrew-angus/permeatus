@@ -47,6 +47,8 @@ class homogenisation(layered1D):
     self.Pavg = None
     self.Davg = None
     self.Savg = None
+    self.nodeSets = [None for i in range(self.materials)]
+    self.interfaceNodes = np.empty(0)
 
     # Calculate P from DS, or vice versa
     if self.D is not None:
@@ -317,8 +319,8 @@ class homogenisation(layered1D):
     ents = gmsh.model.getEntities(2)
     dlayers = [(2,i) for i in layerid]
     ents = [i for i in ents if i not in dlayers]
-    gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="material0")
-    gmsh.model.addPhysicalGroup(2, [i[1] for i in dlayers], name="material1")
+    gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], tag=1, name="material0")
+    gmsh.model.addPhysicalGroup(2, [i[1] for i in dlayers], tag=2, name="material1")
     gmsh.model.occ.synchronize()
 
     # Define structured mesh with seeded edges
@@ -337,6 +339,21 @@ class homogenisation(layered1D):
     # Generate mesh
     gmsh.model.mesh.generate(2)
     gmsh.model.mesh.recombine()
+
+    # Save material node sets
+    for i in range(self.materials):
+      self.nodeSets[i], coords = gmsh.model.mesh.getNodesForPhysicalGroup(2, i+1)
+
+    # Interfacial nodes
+    self.interfaceNodes = np.empty(0)
+    for i in range(self.materials):
+      for j in range(i):
+        if i != j:
+          for k in self.nodeSets[i]:
+            for l in self.nodeSets[j]:
+              if k == l:
+                self.interfaceNodes = np.append(self.interfaceNodes,k)
+    self.interfaceNodes = self.interfaceNodes.astype(np.intc)
 
     # Acquire boundary node sets
     gmsh.model.occ.synchronize()
