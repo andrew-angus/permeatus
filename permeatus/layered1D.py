@@ -16,9 +16,7 @@ class layered1D:
   # Initialisation arguments
   def __init__(self,materials,L=None,touts=None,D=None,S=None,P=None,\
                C0=None,C1=None,p0=None,p1=None,\
-               N=None,tstep=None,ncpu=None,\
-               Dc=None,Sc=None,Pc=None,Vd_frac=None,AR=None,\
-               Dd=None,Sd=None,Pd=None,model=None,solver='abaqus',\
+               N=None,tstep=None,ncpu=None,solver='abaqus',\
                jobname='job',directory='.',verbose=True):
 
     # Defaults
@@ -46,14 +44,6 @@ class layered1D:
     self.tstep = tstep
     self.ncpu = ncpu
     self.totL = np.sum(L)
-    self.Dc = Dc
-    self.Sc = Sc
-    self.Pc = Pc
-    self.Dd = Dd
-    self.Sd = Sd
-    self.Pd = Pd
-    self.Vd_frac = Vd_frac
-    self.AR = AR
     self.model = model
     self.solver = solver
     self.jobname = jobname
@@ -69,57 +59,17 @@ class layered1D:
     self.C = None
     self.x = None
     self.xc = None
-    self.Pavg = None
-    self.Davg = None
-    self.Savg = None
-    self.P_upper = None
-    self.D_upper = None
-    self.S_upper = None
-    self.P_lower = None
-    self.D_lower = None
-    self.S_lower = None
+    self.P_eff = None
+    self.D_eff = None
+    self.S_eff = None
     self.nodesets = [None for i in range(self.materials)]
 
-    # Set dispersed phase coefficients to zeros if none
-    if Pd is None and Dd is None:
-      Pd = np.zeros(materials)
-      Dd = np.zeros(materials)
-      Sd = np.zeros(materials)
-    # Else get one from the other
-    else:
-      if self.Dd is not None:
-        self.Pd = self.Dd*self.Sd
-      elif self.Pd is not None:
-        self.Dd = self.Pd
-        self.Sd = np.ones_like(self.Dd)
-
-    # Nielsen model if applicable
-    if self.Vd_frac is not None:
-
-      # Calculate Pc from DcSc, or vice versa
-      if self.Dc is not None:
-        self.Pc = self.Dc*self.Sc
-      elif self.Pc is not None:
-        self.Dc = self.Pc
-        self.Sc = np.ones_like(self.Dc)
-
-      # Evaluate effective coefficients
-      if model == 'Nielsen':
-        tortuosity = 1 + 0.5*self.AR*self.Vd_frac
-        self.D = self.Dc/mdiv(tortuosity)
-        self.S = self.Sc*(1-Vd_frac)
-        self.P = self.D*self.S
-      elif model == None:
-        self.P = self.Pc
-        self.D = self.Dc
-        self.S = self.Sc
-    else:
-      # Calculate P from DS, or vice versa
-      if self.D is not None:
-        self.P = self.D*self.S
-      elif self.P is not None:
-        self.D = self.P
-        self.S = np.ones_like(self.D)
+    # Calculate P from DS, or vice versa
+    if self.D is not None:
+      self.P = self.D*self.S
+    elif self.P is not None:
+      self.D = self.P
+      self.S = np.ones_like(self.D)
 
     # Calculate one BC from the other
     if self.p0 is not None:

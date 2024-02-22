@@ -130,7 +130,13 @@ Dhp,Shp,Php = perm.D_eff, perm.S_eff, perm.P_eff
 # %%
 perm.HS_lower_bound()
 print(perm.D_eff,perm.S_eff,perm.P_eff)
-Dhp,Shp,Php = perm.D_eff, perm.S_eff, perm.P_eff
+Dhm,Shm,Phm = perm.D_eff, perm.S_eff, perm.P_eff
+
+# %%
+perm.AR = 1
+perm.nielsen()
+print(perm.D_eff,perm.S_eff,perm.P_eff)
+Dn,Sn,Pn = perm.D_eff, perm.S_eff, perm.P_eff
 
 # %%
 print((Dm-Dr)/(Dv-Dr))

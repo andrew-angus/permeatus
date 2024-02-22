@@ -457,7 +457,7 @@ class homogenisation(layered1D):
 
     # Check only 2 materials specified
     if self.materials != 2:
-      raise Exception('cross_section_mesh only implemented for 2 material system')
+      raise Exception('method only implemented for 2 material system')
 
     # Determine high and low coefficients wrt permeation
     if self.P[1] > self.P[0]:
@@ -487,7 +487,7 @@ class homogenisation(layered1D):
 
     # Check only 2 materials specified
     if self.materials != 2:
-      raise Exception('cross_section_mesh only implemented for 2 material system')
+      raise Exception('method only implemented for 2 material system')
 
     # Determine high and low coefficients wrt permeation
     if self.P[1] > self.P[0]:
@@ -511,3 +511,16 @@ class homogenisation(layered1D):
     #self.S_eff = res[2]
     self.S_eff = self.P_eff/self.D_eff
     #self.D_eff = self.P_eff/self.S_eff
+
+  # Get prediction of Nielsen model
+  def nielsen(self):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('method only implemented for 2 material system')
+
+    # Evaluate effective coefficients
+    tortuosity = 1 + 0.5*self.AR*self.vFrac[1]
+    self.D_eff = self.D[0]/mdiv(tortuosity)
+    self.S_eff = self.vFrac[0]*self.S[0]
+    self.P_eff = self.D_eff*self.S_eff
