@@ -439,13 +439,15 @@ class homogenisation(layered1D):
   # Analytical Reuss bound
   def reuss_bound(self):
 
-    self.D_eff = 1/np.sum(self.vFrac/self.D)
     self.P_eff = 1/np.sum(self.vFrac/self.P)
+    self.D_eff = 1/np.sum(self.vFrac/self.D)
     self.S_eff = self.P_eff/self.D_eff
 
   # Analytical Voigt bound
   def voigt_bound(self):
 
-    self.D_eff = np.sum(self.vFrac*self.D)
     self.P_eff = np.sum(self.vFrac*self.P)
-    self.S_eff = self.P_eff/self.D_eff
+    #self.D_eff = np.sum(self.vFrac*self.D)
+    #self.S_eff = self.P_eff/self.D_eff
+    self.S_eff = np.sum(self.vFrac*self.S)
+    self.D_eff = self.P_eff/self.S_eff

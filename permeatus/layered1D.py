@@ -203,6 +203,7 @@ class layered1D:
 
       # Remove output file to prevent appending to existing file
       try:
+        self.field = {}
         os.system('rm C.csv')
         os.system('rm J.csv')
         os.system('rm p.csv')
@@ -233,11 +234,11 @@ class layered1D:
       print('DONE')
 
   # Read field data output from abaqus csv file
-  #TODO vector/tensor field reading
   def read_field(self,target='C',targetdir=None):
 
     # Target check
-    targets = ['C','p','J']
+    #targets = ['C','p','J']
+    targets = ['C','J']
     if target not in targets:
       raise Exception(f'target must be one of {targets}')
 
@@ -297,12 +298,6 @@ class layered1D:
           field[incc]['material'] = np.r_[field[incc]['material'],material]
           field[incc]['data'] = np.r_[field[incc]['data'],\
               np.array([[float(row[fieldkey]) for fieldkey in fieldkeys]])]
-
-      # Get material
-      #if target == 'C':
-      #  for i in range(self.frames:
-      #  for i in range(self.materials):
-      #    if np.isin(node,self.nodeSets
 
   # Plot 1D solution
   def plot_1d(self,target='C',showplot=True,timemask=None,plotlabels=None):
@@ -372,6 +367,52 @@ class layered1D:
     if showplot:
       plt.show()
 
+  # Calculate concentration gradient
+  def get_gradC(self):
+
+    # Read fields if not already read
+    if 'J' not in self.field.keys():
+      self.read_field('J')
+    if 'C' not in self.field.keys():
+      self.read_field('C')
+
+    # Loop through frames and calculate gradient by Fick's first law
+    for i in range(self.frames):
+      D = self.D[self.field['J'][i]['material']][:,None]
+      self.field['C'][i]['grad'] = -self.field['J'][i]['data']/D
+
+  # Get pressure field
+  def get_p(self):
+
+    # Read fields if not already read
+    if 'J' not in self.field.keys():
+      self.read_field('J')
+    if 'C' not in self.field.keys():
+      self.read_field('C')
+
+    # Loop through frames and populate pressure field
+    self.field['p'] = [None for i in range(self.frames)]
+    field = self.field['p']
+    for i in range(self.frames):
+      field[i] = {}
+      S = self.S[self.field['J'][i]['material']]
+      field[i]['data'] = self.field['C'][i]['data']*S
+      field[i]['x'] = copy.deepcopy(self.field['C'][i]['x'])
+      field[i]['y'] = copy.deepcopy(self.field['C'][i]['y'])
+      field[i]['material'] = copy.deepcopy(self.field['C'][i]['material'])
+
+  # Calculate pressure gradient
+  def get_gradp(self):
+
+    # Get pressure field if non-existent
+    if 'p' not in self.field.keys():
+      self.get_p()
+
+    # Loop through frames and calculate gradient by Darcy's first law
+    for i in range(self.frames):
+      P = self.P[self.field['J'][i]['material']][:,None]
+      self.field['p'][i]['grad'] = -self.field['J'][i]['data']/P
+
   # Function which reads xy report from abaqus
   def read_xy(self,fname='abaqus.rpt'):
 
@@ -407,6 +448,7 @@ class layered1D:
                 self.xy[label] = np.append(self.xy[label],float(entries[i]))
 
   # Linear algebra steady state solution
+  #TODO Update field quantities for better integration with other parts of code
   def steady_state(self,y='C',plot=False,showplot=True,\
       plotlabel='steady-state'):
 
@@ -591,16 +633,22 @@ class layered1D:
       self.D = (self.D_lower+self.D_upper)*0.5
       self.S = (self.S_lower+self.S_upper)*0.5
 
-  # Get average coefficients for multiple layered system
-  def get_avg_coeffs(self):
+  # Get effective coefficients of system by numerical averaging
+  #TODO Work in terms of tensors
+  def get_eff_coeffs(self):
 
-    # Avg coefficients are function of molar flux, volume fraction and 
-    # steady-state gradients in each layer
-    self.Davg = -self.J/np.sum(np.array([self.dC[i]*self.L[i]/self.totL \
-        for i in range(self.materials)]))
-    self.Pavg = -self.J/np.sum(np.array([self.dp[i]*self.L[i]/self.totL \
-        for i in range(self.materials)]))
-    self.Savg = self.Pavg/mdiv(self.Davg)
+    if self.field == {} or 'C' not in self.field.keys() or \
+        'J' not in self.field.keys() or 'p' not in self.field.keys() or \
+        'grad' not in self.field['C'][-1].keys() or \
+        'grad' not in self.field['p'][-1].keys():
+      self.get_gradC()
+      self.get_gradp()
+
+    self.D_eff = -np.mean(self.field['J'][-1]['data'][:,1])/\
+        np.mean(self.field['C'][-1]['grad'][:,1])
+    self.P_eff = -np.mean(self.field['J'][-1]['data'][:,1])/ \
+        np.mean(self.field['p'][-1]['grad'][:,1]) #(self.p0-self.p1)
+    self.S_eff = self.P_eff/self.D_eff
 
 # Avoid divisions by zero
 def mdiv(diver):
