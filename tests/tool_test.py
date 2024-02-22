@@ -123,6 +123,16 @@ print(perm.D_eff,perm.S_eff,perm.P_eff)
 Dm,Sm,Pm = perm.D_eff, perm.S_eff, perm.P_eff
 
 # %%
+perm.HS_upper_bound()
+print(perm.D_eff,perm.S_eff,perm.P_eff)
+Dhp,Shp,Php = perm.D_eff, perm.S_eff, perm.P_eff
+
+# %%
+perm.HS_lower_bound()
+print(perm.D_eff,perm.S_eff,perm.P_eff)
+Dhp,Shp,Php = perm.D_eff, perm.S_eff, perm.P_eff
+
+# %%
 print((Dm-Dr)/(Dv-Dr))
 print((Sm-Sr)/(Sv-Sr))
 print((Pm-Pr)/(Pv-Pr))

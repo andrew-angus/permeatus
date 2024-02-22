@@ -413,40 +413,6 @@ class layered1D:
       P = self.P[self.field['J'][i]['material']][:,None]
       self.field['p'][i]['grad'] = -self.field['J'][i]['data']/P
 
-  # Function which reads xy report from abaqus
-  def read_xy(self,fname='abaqus.rpt'):
-
-    # Initialise data dict and labels logical
-    self.xy = {}
-    labels = True
-
-    # Open report file and go through lines
-    with open(fname) as f:
-      for line in f:
-        # Filter lines which are not of interest (anything but data and labels)
-        if '             ' in line and 'Legend' not in line:
-          # Split resulting lines into list of relevant labels/data
-          entries = line.split(' ')
-          entries = [i for i in entries if not (i == '' or i == '\n')]
-
-          # Check for NoValue and strip new line characters
-          skip = [False for i in range(len(entries))]
-          for i in range(len(entries)):
-            entries[i] = entries[i].rstrip()
-            if entries[i] == 'NoValue':
-              entries[i] = 0.0
-              #skip[i] = True
-
-          # Store labels
-          if labels:
-            self.xy = {i:np.empty(0) for i in entries}
-            labels = False
-          # Append data
-          else:
-            for i,label in enumerate(self.xy):
-              if not skip[i]:
-                self.xy[label] = np.append(self.xy[label],float(entries[i]))
-
   # Linear algebra steady state solution
   #TODO Update field quantities for better integration with other parts of code
   def steady_state(self,y='C',plot=False,showplot=True,\
@@ -559,79 +525,6 @@ class layered1D:
   #TODO calculate flowrate
   def get_flowrate(self):
     pass
-
-  # For composite/crystalline structures, acquire average property bounds
-  def get_eff_bnds(self,method='Wiener',set_eff='False'):
-
-    # Wiener bounds, or absolute bounds by geometric and arithmetic means
-    Vc_frac = 1-self.Vd_frac
-    if method == 'Wiener':
-      self.P_upper = Vc_frac*self.Pc + self.Vd_frac*self.Pd
-      self.D_upper = Vc_frac*self.Dc + self.Vd_frac*self.Dd
-      self.S_upper = Vc_frac*self.Sc + self.Vd_frac*self.Sd
-      self.P_lower = 1/mdiv(Vc_frac/mdiv(self.Pc)+self.Vd_frac/mdiv(self.Pd))
-      self.D_lower = 1/mdiv(Vc_frac/mdiv(self.Dc)+self.Vd_frac/mdiv(self.Dd))
-      self.S_lower = 1/mdiv(Vc_frac/mdiv(self.Sc)+self.Vd_frac/mdiv(self.Sd))
-
-    # Hashin-Strikman bounds, tighter than Wiener assuming structural isotropy
-    elif method == 'HS':
-      self.P_upper = np.zeros(self.materials)
-      self.D_upper = np.zeros(self.materials)
-      self.S_upper = np.zeros(self.materials)
-      self.P_lower = np.zeros(self.materials)
-      self.D_lower = np.zeros(self.materials)
-      self.S_lower = np.zeros(self.materials)
-
-      # Calculate upper and lower bounds (although which is which is yet to be
-      # be determined
-      Pcplus = self.Pc + self.Vd_frac/mdiv(1/mdiv(self.Pd-self.Pc) \
-          +Vc_frac/mdiv(3*self.Pc))
-      Pdplus = self.Pd + Vc_frac/(1/mdiv(self.Pc-self.Pd) \
-          +self.Vd_frac/mdiv(3*self.Pd))
-      Dcplus = self.Dc + self.Vd_frac/mdiv(1/mdiv(self.Dd-self.Dc) \
-          +Vc_frac/mdiv(3*self.Dc))
-      Ddplus = self.Dd + Vc_frac/mdiv(1/mdiv(self.Dc-self.Dd) \
-          +self.Vd_frac/mdiv(3*self.Dd))
-      Scplus = self.Sc + self.Vd_frac/mdiv(1/mdiv(self.Sd-self.Sc) \
-          +Vc_frac/mdiv(3*self.Sc))
-      Sdplus = self.Sd + Vc_frac/mdiv(1/mdiv(self.Sc-self.Sd) \
-          +self.Vd_frac/mdiv(3*self.Sd))
-
-      # Looping over materials required since relative magnitude \
-      # of each phases coefficients important
-      for i in range(self.materials):
-        if self.Pc[i] > self.Pd[i]:
-          self.P_upper[i] = Pcplus[i]
-          self.P_lower[i] = Pdplus[i]
-        else:
-          self.P_upper[i] = Pdplus[i]
-          self.P_lower[i] = Pcplus[i]
-        if self.Dc[i] > self.Dd[i]:
-          self.D_upper[i] = Dcplus[i]
-          self.D_lower[i] = Ddplus[i]
-        else:
-          self.D_upper[i] = Ddplus[i]
-          self.D_lower[i] = Dcplus[i]
-        if self.Sc[i] > self.Sd[i]:
-          self.S_upper[i] = Scplus[i]
-          self.S_lower[i] = Sdplus[i]
-        else:
-          self.S_upper[i] = Sdplus[i]
-          self.S_lower[i] = Scplus[i]
-
-    # If desired, set effective coefficients as upper, lower, or avg
-    if set_eff == 'upper':
-      self.P = self.P_upper
-      self.D = self.D_upper
-      self.S = self.S_upper
-    elif set_eff == 'lower':
-      self.P = self.P_lower
-      self.D = self.D_lower
-      self.S = self.S_lower
-    elif set_eff == 'avg':
-      self.P = (self.P_lower+self.P_upper)*0.5
-      self.D = (self.D_lower+self.D_upper)*0.5
-      self.S = (self.S_lower+self.S_upper)*0.5
 
   # Get effective coefficients of system by numerical averaging
   #TODO Work in terms of tensors

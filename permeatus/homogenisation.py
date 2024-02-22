@@ -286,7 +286,7 @@ class homogenisation(layered1D):
 
     # Check only 2 materials specified
     if self.materials != 2:
-      raise Exception('cross_section_mesh only implemented for 2 material system')
+      raise Exception('mesh only implemented for 2 material system')
 
     # Initialise
     gmsh.initialize()
@@ -371,7 +371,7 @@ class homogenisation(layered1D):
 
     # Check only 2 materials specified
     if self.materials != 2:
-      raise Exception('cross_section_mesh only implemented for 2 material system')
+      raise Exception('mesh only implemented for 2 material system')
 
     # Initialise
     gmsh.initialize()
@@ -451,3 +451,63 @@ class homogenisation(layered1D):
     #self.S_eff = self.P_eff/self.D_eff
     self.S_eff = np.sum(self.vFrac*self.S)
     self.D_eff = self.P_eff/self.S_eff
+
+  # Hashin-Strikman upper bound
+  def HS_upper_bound(self):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('cross_section_mesh only implemented for 2 material system')
+
+    # Determine high and low coefficients wrt permeation
+    if self.P[1] > self.P[0]:
+      hix = 1
+      lox = 0
+      vF = self.vFrac[0]
+    else:
+      hix = 0
+      lox = 1
+      vF = self.vFrac[1]
+
+    # Calculate bound results
+    res = []
+    for i in [self.P,self.D,self.S]:
+      hi, lo = i[hix], i[lox]
+      res.append(hi + vF/(1/(lo-hi)+(1-vF)/(3*hi)))
+
+    # Assign results
+    self.P_eff = res[0]
+    #self.D_eff = res[1]
+    self.S_eff = res[2]
+    #self.S_eff = self.P_eff/self.D_eff
+    self.D_eff = self.P_eff/self.S_eff
+
+  # Hashin-Strikman lower bound
+  def HS_lower_bound(self):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('cross_section_mesh only implemented for 2 material system')
+
+    # Determine high and low coefficients wrt permeation
+    if self.P[1] > self.P[0]:
+      hix = 1
+      lox = 0
+      vF = self.vFrac[0]
+    else:
+      hix = 0
+      lox = 1
+      vF = self.vFrac[1]
+
+    # Calculate bound results
+    res = []
+    for i in [self.P,self.D,self.S]:
+      hi, lo = i[hix], i[lox]
+      res.append(lo + (1-vF)/(1/(hi-lo)+vF/(3*lo)))
+
+    # Assign results
+    self.P_eff = res[0]
+    self.D_eff = res[1]
+    #self.S_eff = res[2]
+    self.S_eff = self.P_eff/self.D_eff
+    #self.D_eff = self.P_eff/self.S_eff
