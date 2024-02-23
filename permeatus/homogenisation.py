@@ -436,6 +436,8 @@ class homogenisation(layered1D):
     gmsh.fltk.run()
     gmsh.finalize()
 
+# test
+
   # Analytical Reuss bound
   def reuss_bound(self):
 
