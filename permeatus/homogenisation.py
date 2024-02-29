@@ -10,6 +10,7 @@ from permeatus.utils import *
 from permeatus.layered1D import *
 import permeatus
 import subprocess
+from scipy.optimize import brentq
 
 # Homogenisation class object
 class homogenisation(layered1D):
@@ -524,3 +525,60 @@ class homogenisation(layered1D):
     self.D_eff = self.D[0]/mdiv(tortuosity)
     self.S_eff = self.vFrac[0]*self.S[0]
     self.P_eff = self.D_eff*self.S_eff
+
+  # Get prediction of Maxwell-Eucken model
+  def maxwell_eucken(self):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('method only implemented for 2 material system')
+
+    # Evaluate effective coefficients
+    self.P_eff = self.P[0]* \
+        (2*self.P[0]+self.P[1]-2*(self.P[0]-self.P[1])*self.vFrac[1])/ \
+        (2*self.P[0]+self.P[1]+(self.P[0]-self.P[1])*self.vFrac[1])
+    self.D_eff = self.D[0]* \
+        (2*self.D[0]+self.D[1]-2*(self.D[0]-self.D[1])*self.vFrac[1])/ \
+        (2*self.D[0]+self.D[1]+(self.D[0]-self.D[1])*self.vFrac[1])
+    self.S_eff = self.P_eff/self.D_eff
+    #self.S_eff = self.S[0]* \
+    #    (2*self.S[0]+self.S[1]-2*(self.S[0]-self.S[1])*self.vFrac[1])/ \
+    #    (2*self.S[0]+self.S[1]+(self.S[0]-self.S[1])*self.vFrac[1])
+    #self.D_eff = self.P_eff/self.S_eff
+
+  # Get prediction of Bruggeman model
+  def bruggeman(self):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('method only implemented for 2 material system')
+
+    # Evaluate effective coefficients
+    Pterm = (3*self.vFrac[1]-1)*self.P[1]+(3*self.vFrac[0]-1)*self.P[0]
+    self.P_eff = 0.25*(Pterm+np.sqrt(Pterm**2+8*self.P[0]*self.P[1]))
+    Dterm = (3*self.vFrac[1]-1)*self.D[1]+(3*self.vFrac[0]-1)*self.D[0]
+    self.D_eff = 0.25*(Dterm+np.sqrt(Dterm**2+8*self.D[0]*self.D[1]))
+    self.S_eff = self.P_eff/self.D_eff
+    #Sterm = (3*self.vFrac[1]-1)*self.S[1]+(3*self.vFrac[0]-1)*self.S[0]
+    #self.S_eff = 0.25*(Sterm+np.sqrt(Sterm**2+8*self.S[0]*self.S[1]))
+    #self.D_eff = self.P_eff/self.S_eff
+
+  # Get prediction of Chen model
+  def chen(self):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('method only implemented for 2 material system')
+
+    # Evaluate effective coefficients
+    def Proot(P_eff):
+      f = P_eff/self.P[0]
+      x = self.P[1]/self.P[0]
+      return self.vFrac[0]**2*((1-x)/(f-x))**2*f - 1
+    self.P_eff = brentq(Proot,self.P[0],self.P[1])
+    def Droot(D_eff):
+      f = D_eff/self.D[0]
+      x = self.D[1]/self.D[0]
+      return self.vFrac[0]**2*((1-x)/(f-x))**2*f - 1
+    self.D_eff = brentq(Droot,self.D[0],self.D[1])
+    self.S_eff = self.P_eff/self.D_eff

@@ -28,5 +28,6 @@ setup(
     "matplotlib",
     "gmsh",
     "pandas",
+    "scipy"
     ],
 )
