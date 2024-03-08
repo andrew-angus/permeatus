@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "permeatus"
+version = "1.0.0"
+authors = [
+  {name = "Andrew Angus", email = "andrewangus27@gmail.com"},
+]
+description = "Permeation modelling tools built around finite element analysis."
+readme = "README.md"
+requires-python = '>=3.8'
+dependencies = [
+  "numpy",
+  "matplotlib",
+  "gmsh",
+  "pandas",
+  "scipy"
+]
+
+[project.urls]
+Repository = "https://github.com/andrew-angus/permeatus.git"
+
+[tool.setuptools]
+packages = ["permeatus"]
