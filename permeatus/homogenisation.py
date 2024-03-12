@@ -18,7 +18,7 @@ class homogenisation(layered1D):
   # Initialisation arguments
   def __init__(self,materials,touts=None,D=None,S=None,P=None,\
                C0=None,C1=None,p0=None,p1=None,\
-               tstep=None,ncpu=None,\
+               tstep=None,ncpu=1,\
                vFrac=None,AR=None,solver='abaqus',\
                jobname='job',directory='.',verbose=True):
 
@@ -70,7 +70,8 @@ class homogenisation(layered1D):
 
   # Create microstructure mesh by random insertion or 
   # Lubachevsky-Stillinger algorithm
-  def cross_section_mesh(self,nc,r=0.1,minSpaceFac=0.05,maxMeshFac=0.2,algorithm='LS'):
+  def cross_section_mesh(self,nc,r=0.1,minSpaceFac=0.05,maxMeshFac=0.2,\
+      algorithm='LS',showmesh=False):
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -87,6 +88,8 @@ class homogenisation(layered1D):
     gmsh.model.add(self.jobname)
     gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
     gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+    if not self.verbose:
+      gmsh.option.setNumber("General.Terminal",0)
 
     # Microstructure specifications
     vfrac = self.vFrac[1] # Volume fraction
@@ -240,7 +243,7 @@ class homogenisation(layered1D):
             # and their periodic translations
             else:
               reject = False
-              for center in centers:
+              for center in c:
                 mindist = np.inf
                 for translator in translations:
                   dist = np.linalg.norm(newc[0]+translator-center)
@@ -279,7 +282,8 @@ class homogenisation(layered1D):
     # Write output and finalise
     write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
         bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
-    gmsh.fltk.run()
+    if showmesh:
+      gmsh.fltk.run()
     gmsh.finalize()
 
   # Create mesh of Reuss bound setup
@@ -296,6 +300,8 @@ class homogenisation(layered1D):
     gmsh.model.add(self.jobname)
     gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
     gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+    if not self.verbose:
+      gmsh.option.setNumber("General.Terminal",0)
 
     # Layers
     vfrac = self.vFrac[1] # Volume fraction
@@ -381,6 +387,8 @@ class homogenisation(layered1D):
     gmsh.model.add(self.jobname)
     gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
     gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+    if not self.verbose:
+      gmsh.option.setNumber("General.Terminal",0)
 
     # Layers
     vfrac = self.vFrac[1] # Volume fraction

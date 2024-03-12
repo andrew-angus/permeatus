@@ -92,6 +92,8 @@ class layered1D:
     gmsh.model.add(self.jobname)
     gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
     gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+    if not self.verbose:
+      gmsh.option.setNumber("General.Terminal",0)
 
     # Construct materials
     dx = self.totL
@@ -161,9 +163,15 @@ class layered1D:
         pass
 
       # Submit input file
-      print('Running ABAQUS...')
-      subprocess.call(\
-          ['abaqus','interactive',f'job={self.jobname}',f'cpus={self.ncpu}'])
+      if self.verbose:
+        print('Running ABAQUS...')
+        subprocess.call(\
+            ['abaqus','interactive',f'job={self.jobname}',f'cpus={self.ncpu}'])
+      else:
+        subprocess.call(\
+            ['abaqus','interactive',f'job={self.jobname}',f'cpus={self.ncpu}'],\
+            stdout=subprocess.DEVNULL, \
+            stderr=subprocess.STDOUT)
 
       # Obtain and update post-processing script
       postscript = files(permeatus).joinpath("data/abaqus_postscript.txt")
@@ -180,7 +188,12 @@ class layered1D:
             # Write other lines unchanged
             else:
               o.write(row)
-      subprocess.call(['abaqus','cae','noGui=abaqus_postscript.py'])
+      if self.verbose:
+        subprocess.call(['abaqus','cae','noGui=abaqus_postscript.py'])
+      else:
+        subprocess.call(['abaqus','cae','noGui=abaqus_postscript.py'],\
+        stdout=subprocess.DEVNULL, \
+        stderr=subprocess.STDOUT)
       print('DONE')
 
   # Read field data output from abaqus csv file
@@ -328,7 +341,7 @@ class layered1D:
 
     # Loop through frames and calculate gradient by Fick's first law
     for i in range(self.frames):
-      D = self.D[self.field['J'][i]['material']][:,None]
+      D = np.array([self.D[j] for j in self.field['J'][i]['material']])[:,None]
       self.field['C'][i]['grad'] = -self.field['J'][i]['data']/D
 
   # Get pressure field
@@ -345,7 +358,7 @@ class layered1D:
     field = self.field['p']
     for i in range(self.frames):
       field[i] = {}
-      S = self.S[self.field['J'][i]['material']]
+      S = np.array([self.S[j] for j in self.field['J'][i]['material']])
       field[i]['data'] = self.field['C'][i]['data']*S
       field[i]['x'] = copy.deepcopy(self.field['C'][i]['x'])
       field[i]['y'] = copy.deepcopy(self.field['C'][i]['y'])
@@ -360,7 +373,7 @@ class layered1D:
 
     # Loop through frames and calculate gradient by Darcy's first law
     for i in range(self.frames):
-      P = self.P[self.field['J'][i]['material']][:,None]
+      P = np.array([self.P[j] for j in self.field['J'][i]['material']])[:,None]
       self.field['p'][i]['grad'] = -self.field['J'][i]['data']/P
 
   # Linear algebra steady state solution
