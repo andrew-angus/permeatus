@@ -71,7 +71,7 @@ class homogenisation(layered1D):
   # Create microstructure mesh by random insertion or 
   # Lubachevsky-Stillinger algorithm
   def cross_section_mesh(self,nc,r=0.1,minSpaceFac=0.05,maxMeshFac=0.2,\
-      algorithm='LS',showmesh=False):
+      algorithm='LS',showmesh=False,seed=None):
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -80,6 +80,10 @@ class homogenisation(layered1D):
     valids = ['LS','random']
     if algorithm not in valids:
       raise Exception(f'algorithm must be one of {valids}')
+
+    # Random seed
+    if seed is not None:
+      np.random.seed(seed)
 		
     # Initialise
     gmsh.initialize()
