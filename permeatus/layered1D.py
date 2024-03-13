@@ -200,16 +200,21 @@ class layered1D:
   def read_field(self,target='C',targetdir=None):
 
     # Target check
-    #targets = ['C','p','J']
-    targets = ['C','J']
+    targets = ['C','p','J','V']
     if target not in targets:
       raise Exception(f'target must be one of {targets}')
 
     # Initialise field-specific information
-    self.field[target] = [None for i in range(self.frames)]
+    if target != 'V':
+      self.field[target] = [None for i in range(self.frames)]
+    else:
+      self.field[target] = [None]
     field = self.field[target]
     if target == 'C':
       fieldkeys = ['CONC']
+      fieldsize = 1
+    if target == 'V':
+      fieldkeys = ['IVOL']
       fieldsize = 1
     if target == 'p':
       fieldkeys = ['NNC11']
@@ -261,6 +266,7 @@ class layered1D:
           field[incc]['material'] = np.r_[field[incc]['material'],material]
           field[incc]['data'] = np.r_[field[incc]['data'],\
               np.array([[float(row[fieldkey]) for fieldkey in fieldkeys]])]
+
 
   # Plot 1D solution
   def plot_1d(self,target='C',showplot=True,timemask=None,plotlabels=None):
@@ -350,8 +356,8 @@ class layered1D:
     # Read fields if not already read
     if 'J' not in self.field.keys():
       self.read_field('J')
-    if 'C' not in self.field.keys():
-      self.read_field('C')
+    if 'p' not in self.field.keys():
+      self.read_field('p')
 
     # Loop through frames and populate pressure field
     self.field['p'] = [None for i in range(self.frames)]
@@ -471,10 +477,10 @@ class layered1D:
       return x, p, J
 
   # Calculate average steady state molar flux and store result
-  def get_molar_flux(self,method='abaqus'):
+  def get_molar_flux(self,method='data'):
 
     # Either calculate average of abaqus data or use steady-state 1D FEA
-    if method == 'abaqus':
+    if method == 'data':
       if self.field is None:
         self.read_field('J')
       self.J = np.mean(self.field['J'][-1]['data'][:,1])
@@ -493,6 +499,7 @@ class layered1D:
   #TODO Work in terms of tensors
   def get_eff_coeffs(self):
 
+    # Check if concentration and pressure gradient data calculated
     if self.field == {} or 'C' not in self.field.keys() or \
         'J' not in self.field.keys() or 'p' not in self.field.keys() or \
         'grad' not in self.field['C'][-1].keys() or \
@@ -500,11 +507,28 @@ class layered1D:
       self.get_gradC()
       self.get_gradp()
 
+    # Check if volume data available
+    if 'V' not in self.field.keys():
+      self.read_field('V')
+
+    self.D_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/\
+        self.V_mean(self.field['C'][-1]['grad'][:,1])
+    self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
+        self.V_mean(self.field['p'][-1]['grad'][:,1])
+    self.S_eff = self.P_eff/self.D_eff
+    """
     self.D_eff = -np.mean(self.field['J'][-1]['data'][:,1])/\
         np.mean(self.field['C'][-1]['grad'][:,1])
     self.P_eff = -np.mean(self.field['J'][-1]['data'][:,1])/ \
         np.mean(self.field['p'][-1]['grad'][:,1]) #(self.p0-self.p1)
     self.S_eff = self.P_eff/self.D_eff
+    """
+
+  # Return volume weighted mean of last timestep in field
+  def V_mean(self,field):
+    sumfieldV = np.sum(field*self.field['V'][-1]['data'][:,0])
+    sumV = np.sum(self.field['V'][-1]['data'])
+    return sumfieldV/sumV
 
 # Avoid divisions by zero
 def mdiv(diver):
