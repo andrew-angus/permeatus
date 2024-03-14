@@ -70,7 +70,7 @@ class homogenisation(layered1D):
 
   # Create microstructure mesh by random insertion or 
   # Lubachevsky-Stillinger algorithm
-  def cross_section_mesh(self,nc,r=0.1,minSpaceFac=0.05,maxMeshFac=0.2,\
+  def cross_section_mesh(self,nc,r=0.1,minSpaceFac=0.1,maxMeshFac=0.4,\
       algorithm='LS',showmesh=False,seed=None):
 
     # Check only 2 materials specified

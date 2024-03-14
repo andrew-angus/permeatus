@@ -156,9 +156,10 @@ class layered1D:
       # Remove output file to prevent appending to existing file
       try:
         self.field = {}
-        os.system('rm C.csv')
-        os.system('rm J.csv')
-        os.system('rm p.csv')
+        subprocess.call(['rm',"C.csv"],stderr=subprocess.DEVNULL)
+        subprocess.call(['rm',"V.csv"],stderr=subprocess.DEVNULL)
+        subprocess.call(['rm',"J.csv"],stderr=subprocess.DEVNULL)
+        subprocess.call(['rm',"p.csv"],stderr=subprocess.DEVNULL)
       except:
         pass
 
@@ -190,11 +191,11 @@ class layered1D:
               o.write(row)
       if self.verbose:
         subprocess.call(['abaqus','cae','noGui=abaqus_postscript.py'])
+        print('DONE')
       else:
         subprocess.call(['abaqus','cae','noGui=abaqus_postscript.py'],\
         stdout=subprocess.DEVNULL, \
         stderr=subprocess.STDOUT)
-      print('DONE')
 
   # Read field data output from abaqus csv file
   def read_field(self,target='C',targetdir=None):
@@ -245,7 +246,7 @@ class layered1D:
         time = float(splits[-1])
 
         # Get material if integration point output
-        if target in ['C','J']:
+        if target in ['C','J','V']:
           material = int(row['Material Name'].strip('MATERIAL'))
         else:
           material = -1
@@ -350,32 +351,14 @@ class layered1D:
       D = np.array([self.D[j] for j in self.field['J'][i]['material']])[:,None]
       self.field['C'][i]['grad'] = -self.field['J'][i]['data']/D
 
-  # Get pressure field
-  def get_p(self):
-
-    # Read fields if not already read
-    if 'J' not in self.field.keys():
-      self.read_field('J')
-    if 'p' not in self.field.keys():
-      self.read_field('p')
-
-    # Loop through frames and populate pressure field
-    self.field['p'] = [None for i in range(self.frames)]
-    field = self.field['p']
-    for i in range(self.frames):
-      field[i] = {}
-      S = np.array([self.S[j] for j in self.field['J'][i]['material']])
-      field[i]['data'] = self.field['C'][i]['data']*S
-      field[i]['x'] = copy.deepcopy(self.field['C'][i]['x'])
-      field[i]['y'] = copy.deepcopy(self.field['C'][i]['y'])
-      field[i]['material'] = copy.deepcopy(self.field['C'][i]['material'])
-
   # Calculate pressure gradient
   def get_gradp(self):
 
     # Get pressure field if non-existent
     if 'p' not in self.field.keys():
-      self.get_p()
+      self.read_field('p')
+    if 'J' not in self.field.keys():
+      self.read_field('J')
 
     # Loop through frames and calculate gradient by Darcy's first law
     for i in range(self.frames):
@@ -516,13 +499,22 @@ class layered1D:
     self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
         self.V_mean(self.field['p'][-1]['grad'][:,1])
     self.S_eff = self.P_eff/self.D_eff
-    """
-    self.D_eff = -np.mean(self.field['J'][-1]['data'][:,1])/\
-        np.mean(self.field['C'][-1]['grad'][:,1])
-    self.P_eff = -np.mean(self.field['J'][-1]['data'][:,1])/ \
-        np.mean(self.field['p'][-1]['grad'][:,1]) #(self.p0-self.p1)
-    self.S_eff = self.P_eff/self.D_eff
-    """
+
+  # Get effective permeability of system by numerical averaging
+  def get_P_eff(self):
+
+    # Check if concentration and pressure gradient data calculated
+    if self.field == {} or \
+        'J' not in self.field.keys() or 'p' not in self.field.keys() or \
+        'grad' not in self.field['p'][-1].keys():
+      self.get_gradp()
+
+    # Check if volume data available
+    if 'V' not in self.field.keys():
+      self.read_field('V')
+
+    self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
+        self.V_mean(self.field['p'][-1]['grad'][:,1])
 
   # Return volume weighted mean of last timestep in field
   def V_mean(self,field):
