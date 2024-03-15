@@ -82,8 +82,9 @@ class homogenisation(layered1D):
       raise Exception(f'algorithm must be one of {valids}')
 
     # Random seed
-    if seed is not None:
-      np.random.seed(seed)
+    if seed is None:
+      seed = np.random.randint(2e9)
+    np.random.seed(seed)
 		
     # Initialise
     gmsh.initialize()
@@ -111,24 +112,6 @@ class homogenisation(layered1D):
     # Define buffers
     cbuff = 2*r + eps
 
-    # LS algorithm
-    # Randomly insert N point particles
-    c = np.random.rand(nc,2)*np.array([[boxsize,boxsize]])
-
-    # Randomly assign velocities
-    v = np.random.rand(nc,2)*np.array([[2*boxsize,2*boxsize]])
-    v[:,0] -= boxsize
-    v[:,1] -= boxsize
-
-    # Define algorithm variables
-    t = 0 # Time
-    rt = 0 # r(t)
-    rf = r + eps/2 # Final radius, including minimum spacing
-    h = rf # Radius growth rate
-    tf = rf/h # Final time
-    parthits = np.ones((nc,nc))*np.inf # Matrix of particle collision times
-    niter = 0 # Iteration counter
-
     # Translations
     translationbase = np.array([-boxsize,0.0,boxsize])
     translations = np.array([[i,j] for i in translationbase for j in translationbase])
@@ -137,6 +120,24 @@ class homogenisation(layered1D):
 
     # Lubachevsky-Stillinger algorithm
     if algorithm == 'LS':
+
+      # LS algorithm
+      # Randomly insert N point particles
+      c = np.random.rand(nc,2)*np.array([[boxsize,boxsize]])
+
+      # Randomly assign velocities
+      v = np.random.rand(nc,2)*np.array([[2*boxsize,2*boxsize]])
+      v[:,0] -= boxsize
+      v[:,1] -= boxsize
+
+      # Define algorithm variables
+      t = 0 # Time
+      rt = 0 # r(t)
+      rf = r + eps/2 # Final radius, including minimum spacing
+      h = rf # Radius growth rate
+      tf = rf/h # Final time
+      parthits = np.ones((nc,nc))*np.inf # Matrix of particle collision times
+      niter = 0 # Iteration counter
 
       # Periodic wrapping of coordinates
       def wrap(point):
@@ -283,12 +284,18 @@ class homogenisation(layered1D):
     bottomnodes, topnodes, leftnodes, rightnodes = \
         boundary_nodes_2d(gmsh.model,boxsize,boxsize)
 
-    # Write output and finalise
-    write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
-        bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
-    if showmesh:
-      gmsh.fltk.run()
-    gmsh.finalize()
+    # Check for failed construction
+    if len(leftnodes) != len(rightnodes):
+      print("Warning: left node list not equal length to right nodes; rerunning with different seed")
+      self.cross_section_mesh(nc=nc,r=r,minSpaceFac=minSpaceFac,maxMeshFac=maxMeshFac,\
+      algorithm=algorithm,showmesh=showmesh)
+    else:
+      # Write output and finalise
+      write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
+          bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
+      if showmesh:
+        gmsh.fltk.run()
+      gmsh.finalize()
 
   # Create mesh of Reuss bound setup
   def reuss_mesh(self,Nx=2,Ny=80):
