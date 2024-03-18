@@ -10,6 +10,7 @@ from permeatus.utils import *
 from permeatus.layered1D import *
 import permeatus
 import subprocess
+from scipy.optimize import brentq
 
 # Homogenisation class object
 class homogenisation(layered1D):
@@ -17,7 +18,7 @@ class homogenisation(layered1D):
   # Initialisation arguments
   def __init__(self,materials,touts=None,D=None,S=None,P=None,\
                C0=None,C1=None,p0=None,p1=None,\
-               tstep=None,ncpu=None,\
+               tstep=None,ncpu=1,\
                vFrac=None,AR=None,solver='abaqus',\
                jobname='job',directory='.',verbose=True):
 
@@ -69,7 +70,8 @@ class homogenisation(layered1D):
 
   # Create microstructure mesh by random insertion or 
   # Lubachevsky-Stillinger algorithm
-  def cross_section_mesh(self,nc,r=0.1,minSpaceFac=0.05,maxMeshFac=0.2,algorithm='LS'):
+  def cross_section_mesh(self,nc,r=0.1,minSpaceFac=0.1,maxMeshFac=0.4,\
+      algorithm='LS',showmesh=False,seed=None):
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -78,6 +80,11 @@ class homogenisation(layered1D):
     valids = ['LS','random']
     if algorithm not in valids:
       raise Exception(f'algorithm must be one of {valids}')
+
+    # Random seed
+    if seed is None:
+      seed = np.random.randint(2e9)
+    np.random.seed(seed)
 		
     # Initialise
     gmsh.initialize()
@@ -86,6 +93,8 @@ class homogenisation(layered1D):
     gmsh.model.add(self.jobname)
     gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
     gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+    if not self.verbose:
+      gmsh.option.setNumber("General.Terminal",0)
 
     # Microstructure specifications
     vfrac = self.vFrac[1] # Volume fraction
@@ -103,24 +112,6 @@ class homogenisation(layered1D):
     # Define buffers
     cbuff = 2*r + eps
 
-    # LS algorithm
-    # Randomly insert N point particles
-    c = np.random.rand(nc,2)*np.array([[boxsize,boxsize]])
-
-    # Randomly assign velocities
-    v = np.random.rand(nc,2)*np.array([[2*boxsize,2*boxsize]])
-    v[:,0] -= boxsize
-    v[:,1] -= boxsize
-
-    # Define algorithm variables
-    t = 0 # Time
-    rt = 0 # r(t)
-    rf = r + eps/2 # Final radius, including minimum spacing
-    h = rf # Radius growth rate
-    tf = rf/h # Final time
-    parthits = np.ones((nc,nc))*np.inf # Matrix of particle collision times
-    niter = 0 # Iteration counter
-
     # Translations
     translationbase = np.array([-boxsize,0.0,boxsize])
     translations = np.array([[i,j] for i in translationbase for j in translationbase])
@@ -129,6 +120,24 @@ class homogenisation(layered1D):
 
     # Lubachevsky-Stillinger algorithm
     if algorithm == 'LS':
+
+      # LS algorithm
+      # Randomly insert N point particles
+      c = np.random.rand(nc,2)*np.array([[boxsize,boxsize]])
+
+      # Randomly assign velocities
+      v = np.random.rand(nc,2)*np.array([[2*boxsize,2*boxsize]])
+      v[:,0] -= boxsize
+      v[:,1] -= boxsize
+
+      # Define algorithm variables
+      t = 0 # Time
+      rt = 0 # r(t)
+      rf = r + eps/2 # Final radius, including minimum spacing
+      h = rf # Radius growth rate
+      tf = rf/h # Final time
+      parthits = np.ones((nc,nc))*np.inf # Matrix of particle collision times
+      niter = 0 # Iteration counter
 
       # Periodic wrapping of coordinates
       def wrap(point):
@@ -239,7 +248,7 @@ class homogenisation(layered1D):
             # and their periodic translations
             else:
               reject = False
-              for center in centers:
+              for center in c:
                 mindist = np.inf
                 for translator in translations:
                   dist = np.linalg.norm(newc[0]+translator-center)
@@ -275,11 +284,18 @@ class homogenisation(layered1D):
     bottomnodes, topnodes, leftnodes, rightnodes = \
         boundary_nodes_2d(gmsh.model,boxsize,boxsize)
 
-    # Write output and finalise
-    write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
-        bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
-    gmsh.fltk.run()
-    gmsh.finalize()
+    # Check for failed construction
+    if len(leftnodes) != len(rightnodes):
+      print("Warning: left node list not equal length to right nodes; rerunning with different seed")
+      self.cross_section_mesh(nc=nc,r=r,minSpaceFac=minSpaceFac,maxMeshFac=maxMeshFac,\
+      algorithm=algorithm,showmesh=showmesh)
+    else:
+      # Write output and finalise
+      write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
+          bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
+      if showmesh:
+        gmsh.fltk.run()
+      gmsh.finalize()
 
   # Create mesh of Reuss bound setup
   def reuss_mesh(self,Nx=2,Ny=80):
@@ -295,6 +311,8 @@ class homogenisation(layered1D):
     gmsh.model.add(self.jobname)
     gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
     gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+    if not self.verbose:
+      gmsh.option.setNumber("General.Terminal",0)
 
     # Layers
     vfrac = self.vFrac[1] # Volume fraction
@@ -380,6 +398,8 @@ class homogenisation(layered1D):
     gmsh.model.add(self.jobname)
     gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
     gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+    if not self.verbose:
+      gmsh.option.setNumber("General.Terminal",0)
 
     # Layers
     vfrac = self.vFrac[1] # Volume fraction
@@ -526,3 +546,60 @@ class homogenisation(layered1D):
     self.D_eff = self.D[0]/mdiv(tortuosity)
     self.S_eff = self.vFrac[0]*self.S[0]
     self.P_eff = self.D_eff*self.S_eff
+
+  # Get prediction of Maxwell-Eucken model
+  def maxwell_eucken(self):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('method only implemented for 2 material system')
+
+    # Evaluate effective coefficients
+    self.P_eff = self.P[0]* \
+        (2*self.P[0]+self.P[1]-2*(self.P[0]-self.P[1])*self.vFrac[1])/ \
+        (2*self.P[0]+self.P[1]+(self.P[0]-self.P[1])*self.vFrac[1])
+    self.D_eff = self.D[0]* \
+        (2*self.D[0]+self.D[1]-2*(self.D[0]-self.D[1])*self.vFrac[1])/ \
+        (2*self.D[0]+self.D[1]+(self.D[0]-self.D[1])*self.vFrac[1])
+    self.S_eff = self.P_eff/self.D_eff
+    #self.S_eff = self.S[0]* \
+    #    (2*self.S[0]+self.S[1]-2*(self.S[0]-self.S[1])*self.vFrac[1])/ \
+    #    (2*self.S[0]+self.S[1]+(self.S[0]-self.S[1])*self.vFrac[1])
+    #self.D_eff = self.P_eff/self.S_eff
+
+  # Get prediction of Bruggeman model
+  def bruggeman(self):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('method only implemented for 2 material system')
+
+    # Evaluate effective coefficients
+    Pterm = (3*self.vFrac[1]-1)*self.P[1]+(3*self.vFrac[0]-1)*self.P[0]
+    self.P_eff = 0.25*(Pterm+np.sqrt(Pterm**2+8*self.P[0]*self.P[1]))
+    Dterm = (3*self.vFrac[1]-1)*self.D[1]+(3*self.vFrac[0]-1)*self.D[0]
+    self.D_eff = 0.25*(Dterm+np.sqrt(Dterm**2+8*self.D[0]*self.D[1]))
+    self.S_eff = self.P_eff/self.D_eff
+    #Sterm = (3*self.vFrac[1]-1)*self.S[1]+(3*self.vFrac[0]-1)*self.S[0]
+    #self.S_eff = 0.25*(Sterm+np.sqrt(Sterm**2+8*self.S[0]*self.S[1]))
+    #self.D_eff = self.P_eff/self.S_eff
+
+  # Get prediction of Chen model
+  def chen(self):
+
+    # Check only 2 materials specified
+    if self.materials != 2:
+      raise Exception('method only implemented for 2 material system')
+
+    # Evaluate effective coefficients
+    def Proot(P_eff):
+      f = P_eff/self.P[0]
+      x = self.P[1]/self.P[0]
+      return self.vFrac[0]**2*((1-x)/(f-x))**2*f - 1
+    self.P_eff = brentq(Proot,self.P[0],self.P[1])
+    def Droot(D_eff):
+      f = D_eff/self.D[0]
+      x = self.D[1]/self.D[0]
+      return self.vFrac[0]**2*((1-x)/(f-x))**2*f - 1
+    self.D_eff = brentq(Droot,self.D[0],self.D[1])
+    self.S_eff = self.P_eff/self.D_eff

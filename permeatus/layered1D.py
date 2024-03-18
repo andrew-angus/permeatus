@@ -92,6 +92,8 @@ class layered1D:
     gmsh.model.add(self.jobname)
     gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
     gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 1)
+    if not self.verbose:
+      gmsh.option.setNumber("General.Terminal",0)
 
     # Construct materials
     dx = self.totL
@@ -154,16 +156,23 @@ class layered1D:
       # Remove output file to prevent appending to existing file
       try:
         self.field = {}
-        os.system('rm C.csv')
-        os.system('rm J.csv')
-        os.system('rm p.csv')
+        subprocess.call(['rm',"C.csv"],stderr=subprocess.DEVNULL)
+        subprocess.call(['rm',"V.csv"],stderr=subprocess.DEVNULL)
+        subprocess.call(['rm',"J.csv"],stderr=subprocess.DEVNULL)
+        subprocess.call(['rm',"p.csv"],stderr=subprocess.DEVNULL)
       except:
         pass
 
       # Submit input file
-      print('Running ABAQUS...')
-      subprocess.call(\
-          ['abaqus','interactive',f'job={self.jobname}',f'cpus={self.ncpu}'])
+      if self.verbose:
+        print('Running ABAQUS...')
+        subprocess.call(\
+            ['abaqus','interactive',f'job={self.jobname}',f'cpus={self.ncpu}'])
+      else:
+        subprocess.call(\
+            ['abaqus','interactive',f'job={self.jobname}',f'cpus={self.ncpu}'],\
+            stdout=subprocess.DEVNULL, \
+            stderr=subprocess.STDOUT)
 
       # Obtain and update post-processing script
       postscript = files(permeatus).joinpath("data/abaqus_postscript.txt")
@@ -180,23 +189,33 @@ class layered1D:
             # Write other lines unchanged
             else:
               o.write(row)
-      subprocess.call(['abaqus','cae','noGui=abaqus_postscript.py'])
-      print('DONE')
+      if self.verbose:
+        subprocess.call(['abaqus','cae','noGui=abaqus_postscript.py'])
+        print('DONE')
+      else:
+        subprocess.call(['abaqus','cae','noGui=abaqus_postscript.py'],\
+        stdout=subprocess.DEVNULL, \
+        stderr=subprocess.STDOUT)
 
   # Read field data output from abaqus csv file
   def read_field(self,target='C',targetdir=None):
 
     # Target check
-    #targets = ['C','p','J']
-    targets = ['C','J']
+    targets = ['C','p','J','V']
     if target not in targets:
       raise Exception(f'target must be one of {targets}')
 
     # Initialise field-specific information
-    self.field[target] = [None for i in range(self.frames)]
+    if target != 'V':
+      self.field[target] = [None for i in range(self.frames)]
+    else:
+      self.field[target] = [None]
     field = self.field[target]
     if target == 'C':
       fieldkeys = ['CONC']
+      fieldsize = 1
+    if target == 'V':
+      fieldkeys = ['IVOL']
       fieldsize = 1
     if target == 'p':
       fieldkeys = ['NNC11']
@@ -227,7 +246,7 @@ class layered1D:
         time = float(splits[-1])
 
         # Get material if integration point output
-        if target in ['C','J']:
+        if target in ['C','J','V']:
           material = int(row['Material Name'].strip('MATERIAL'))
         else:
           material = -1
@@ -248,6 +267,7 @@ class layered1D:
           field[incc]['material'] = np.r_[field[incc]['material'],material]
           field[incc]['data'] = np.r_[field[incc]['data'],\
               np.array([[float(row[fieldkey]) for fieldkey in fieldkeys]])]
+
 
   # Plot 1D solution
   def plot_1d(self,target='C',showplot=True,timemask=None,plotlabels=None):
@@ -328,39 +348,21 @@ class layered1D:
 
     # Loop through frames and calculate gradient by Fick's first law
     for i in range(self.frames):
-      D = self.D[self.field['J'][i]['material']][:,None]
+      D = np.array([self.D[j] for j in self.field['J'][i]['material']])[:,None]
       self.field['C'][i]['grad'] = -self.field['J'][i]['data']/D
-
-  # Get pressure field
-  def get_p(self):
-
-    # Read fields if not already read
-    if 'J' not in self.field.keys():
-      self.read_field('J')
-    if 'C' not in self.field.keys():
-      self.read_field('C')
-
-    # Loop through frames and populate pressure field
-    self.field['p'] = [None for i in range(self.frames)]
-    field = self.field['p']
-    for i in range(self.frames):
-      field[i] = {}
-      S = self.S[self.field['J'][i]['material']]
-      field[i]['data'] = self.field['C'][i]['data']*S
-      field[i]['x'] = copy.deepcopy(self.field['C'][i]['x'])
-      field[i]['y'] = copy.deepcopy(self.field['C'][i]['y'])
-      field[i]['material'] = copy.deepcopy(self.field['C'][i]['material'])
 
   # Calculate pressure gradient
   def get_gradp(self):
 
     # Get pressure field if non-existent
     if 'p' not in self.field.keys():
-      self.get_p()
+      self.read_field('p')
+    if 'J' not in self.field.keys():
+      self.read_field('J')
 
     # Loop through frames and calculate gradient by Darcy's first law
     for i in range(self.frames):
-      P = self.P[self.field['J'][i]['material']][:,None]
+      P = np.array([self.P[j] for j in self.field['J'][i]['material']])[:,None]
       self.field['p'][i]['grad'] = -self.field['J'][i]['data']/P
 
   # Linear algebra steady state solution
@@ -458,10 +460,10 @@ class layered1D:
       return x, p, J
 
   # Calculate average steady state molar flux and store result
-  def get_molar_flux(self,method='abaqus'):
+  def get_molar_flux(self,method='data'):
 
     # Either calculate average of abaqus data or use steady-state 1D FEA
-    if method == 'abaqus':
+    if method == 'data':
       if self.field is None:
         self.read_field('J')
       self.J = np.mean(self.field['J'][-1]['data'][:,1])
@@ -480,6 +482,7 @@ class layered1D:
   #TODO Work in terms of tensors
   def get_eff_coeffs(self):
 
+    # Check if concentration and pressure gradient data calculated
     if self.field == {} or 'C' not in self.field.keys() or \
         'J' not in self.field.keys() or 'p' not in self.field.keys() or \
         'grad' not in self.field['C'][-1].keys() or \
@@ -487,11 +490,37 @@ class layered1D:
       self.get_gradC()
       self.get_gradp()
 
-    self.D_eff = -np.mean(self.field['J'][-1]['data'][:,1])/\
-        np.mean(self.field['C'][-1]['grad'][:,1])
-    self.P_eff = -np.mean(self.field['J'][-1]['data'][:,1])/ \
-        np.mean(self.field['p'][-1]['grad'][:,1]) #(self.p0-self.p1)
+    # Check if volume data available
+    if 'V' not in self.field.keys():
+      self.read_field('V')
+
+    self.D_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/\
+        self.V_mean(self.field['C'][-1]['grad'][:,1])
+    self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
+        self.V_mean(self.field['p'][-1]['grad'][:,1])
     self.S_eff = self.P_eff/self.D_eff
+
+  # Get effective permeability of system by numerical averaging
+  def get_P_eff(self):
+
+    # Check if concentration and pressure gradient data calculated
+    if self.field == {} or \
+        'J' not in self.field.keys() or 'p' not in self.field.keys() or \
+        'grad' not in self.field['p'][-1].keys():
+      self.get_gradp()
+
+    # Check if volume data available
+    if 'V' not in self.field.keys():
+      self.read_field('V')
+
+    self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
+        self.V_mean(self.field['p'][-1]['grad'][:,1])
+
+  # Return volume weighted mean of last timestep in field
+  def V_mean(self,field):
+    sumfieldV = np.sum(field*self.field['V'][-1]['data'][:,0])
+    sumV = np.sum(self.field['V'][-1]['data'])
+    return sumfieldV/sumV
 
 # Avoid divisions by zero
 def mdiv(diver):

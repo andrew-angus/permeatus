@@ -139,6 +139,21 @@ print(perm.D_eff,perm.S_eff,perm.P_eff)
 Dn,Sn,Pn = perm.D_eff, perm.S_eff, perm.P_eff
 
 # %%
+perm.maxwell_eucken()
+print(perm.D_eff,perm.S_eff,perm.P_eff)
+Dmx,Smx,Pmx = perm.D_eff, perm.S_eff, perm.P_eff
+
+# %%
+perm.bruggeman()
+print(perm.D_eff,perm.S_eff,perm.P_eff)
+Db,Sb,Pb = perm.D_eff, perm.S_eff, perm.P_eff
+
+# %%
+perm.chen()
+print(perm.D_eff,perm.S_eff,perm.P_eff)
+Dc,Sc,Pc = perm.D_eff, perm.S_eff, perm.P_eff
+
+# %%
 print((Dm-Dr)/(Dv-Dr))
 print((Sm-Sr)/(Sv-Sr))
 print((Pm-Pr)/(Pv-Pr))

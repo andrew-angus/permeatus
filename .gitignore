@@ -40,3 +40,4 @@ abaqus.rpt
 *.msh
 *.jpg
 tests/abaqus_postscript.py
+build
