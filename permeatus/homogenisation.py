@@ -34,12 +34,14 @@ class homogenisation(layered1D):
     self.touts = touts
     self.tstep = tstep
     self.ncpu = ncpu
-    self.vFrac = vFrac
-    self.AR = AR
     self.solver = solver
     self.jobname = jobname
     self.directory = directory
     self.verbose = verbose
+
+    # Attributes unique to this class
+    self.vFrac = vFrac
+    self.AR = AR
 
     # Initialise derivative attributes
     if self.touts is not None:

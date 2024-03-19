@@ -264,3 +264,8 @@ def write_abaqus_diffusion(D,S,C0,C1,touts,tstep,\
         f.write(f'*Element Output, directions=YES\n')
         f.write(f'CONC, MFL, IVOL\n')
         f.write(f'*End Step\n')
+
+# Avoid divisions by zero
+def mdiv(diver):
+  return np.where(np.abs(diver) > np.finfo(np.float64).tiny, \
+      diver, np.finfo(np.float64).tiny)

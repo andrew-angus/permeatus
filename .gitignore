@@ -41,3 +41,4 @@ abaqus.rpt
 *.jpg
 tests/abaqus_postscript.py
 build
+generated
