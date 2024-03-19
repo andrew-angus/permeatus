@@ -146,16 +146,16 @@ class layered1D:
     if touts is not None: touts = np.array(touts)  
 
     # Calculate P from DS, or vice versa
-    if D is not None and C is not None:
+    if D is not None and S is not None:
       P = D*S
     elif P is not None:
-      if D is None and C is None:
+      if D is None and S is None:
         D = P
         S = np.ones_like(P)
       elif D is None:
-        D = P/mdiv(S)
+        D = P/S
       else:
-        S = P/mdiv(D)
+        S = P/D
     else:
       raise Exception('Either P or D & S must be specified')
 
@@ -163,13 +163,13 @@ class layered1D:
     if p0 is not None:
       C0 = p0*S[0]
     elif C0 is not None:
-      p0 = C0/mdiv(S[0])
+      p0 = C0/S[0]
     else:
       raise Exception('One of p0 or C0 must be specified.')
     if p1 is not None:
       C1 = p1*S[-1]
     elif C1 is not None:
-      p1 = C1/mdiv(S[-1])
+      p1 = C1/S[-1]
     else:
       p1 = C1 = 0
 
@@ -184,8 +184,6 @@ class layered1D:
       raise Exception('P must be array like and same length as materials')
     if len(S) != materials:
       raise Exception('S must be array like and same length as materials')
-    if touts is not None and len(touts) != materials:
-      raise Exception('touts must be array like and same length as materials')
     if tstep is not None and tstep <= 0.0:
       raise Exception('tstep must be float greater than 0')
     if ncpu < 1:
@@ -421,8 +419,6 @@ class layered1D:
     inc = -1; incc = -1
     fname = f'{target}.csv'
     labels = True
-    if targetdir is not None:
-      fname = os.path.join(targetdir,fname)
     with open(fname, newline='') as f:
       reader = csv.DictReader(f)
       for row in reader:
@@ -493,16 +489,16 @@ class layered1D:
         self.read_field('V')
 
       self.D_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/\
-          mdiv(self.V_mean(self.field['C'][-1]['grad'][:,1]))
+          self.V_mean(self.field['C'][-1]['grad'][:,1])
       self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
-          mdiv(self.V_mean(self.field['p'][-1]['grad'][:,1]))
-      self.S_eff = self.P_eff/mdiv(self.D_eff)
+          self.V_mean(self.field['p'][-1]['grad'][:,1])
+      self.S_eff = self.P_eff/self.D_eff
 
     elif method == 'analytical':
 
-      self.P_eff = 1/mdiv(np.sum(self.L/mdiv(self.totL*self.P)))
-      self.D_eff = 1/mdiv(np.sum(self.L/mdiv(self.totL*self.D)))
-      self.S_eff = self.P_eff/mdiv(self.D_eff)
+      self.P_eff = 1/np.sum(self.L/(self.totL*self.P))
+      self.D_eff = 1/np.sum(self.L/(self.totL*self.D))
+      self.S_eff = self.P_eff/self.D_eff
 
 
 
@@ -523,7 +519,7 @@ class layered1D:
       self.read_field('V')
 
     self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
-        mdiv(self.V_mean(self.field['p'][-1]['grad'][:,1]))
+        self.V_mean(self.field['p'][-1]['grad'][:,1])
 
 
 
@@ -546,8 +542,7 @@ class layered1D:
     """
     sumfieldV = np.sum(field*self.field['V'][-1]['data'][:,0])
     sumV = np.sum(self.field['V'][-1]['data'])
-    Vmean = sumfieldV/mdiv(sumV)
-    return Vmean
+    return sumfieldV/sumV
 
 
 
@@ -568,7 +563,7 @@ class layered1D:
     # Loop through frames and calculate gradient by Fick's first law
     for i in range(self.frames):
       D = np.array([self.D[j] for j in self.field['J'][i]['material']])[:,None]
-      self.field['C'][i]['grad'] = -self.field['J'][i]['data']/mdiv(D)
+      self.field['C'][i]['grad'] = -self.field['J'][i]['data']/D
 
 
 
@@ -589,7 +584,7 @@ class layered1D:
     # Loop through frames and calculate gradient by Darcy's first law
     for i in range(self.frames):
       P = np.array([self.P[j] for j in self.field['J'][i]['material']])[:,None]
-      self.field['p'][i]['grad'] = -self.field['J'][i]['data']/mdiv(P)
+      self.field['p'][i]['grad'] = -self.field['J'][i]['data']/P
 
 
 
@@ -612,7 +607,7 @@ class layered1D:
       self.field['p'][i]['y'] = self.field['C'][i]['y']
       self.field['p'][i]['material'] = self.field['C'][i]['material']
       S = np.array([self.S[j] for j in self.field['C'][i]['material']])
-      self.field['p'][i]['data'] = -self.field['C'][i]['data']/mdiv(S)
+      self.field['p'][i]['data'] = -self.field['C'][i]['data']/S
 
 
 
@@ -670,18 +665,18 @@ class layered1D:
 
             # Get interfacial pressure and swap points if not matching
             Cint = C[iargs]
-            pint = Cint/mdiv(self.S[i:i+2])
+            pint = Cint/self.S[i:i+2]
             if not np.isclose(pint[0],pint[1],atol=1e-8,rtol=1e-5):
               y[iargs[0]], y[iargs[1]] = y[iargs[1]], y[iargs[0]]
               C[iargs[0]], C[iargs[1]] = C[iargs[1]], C[iargs[0]]
 
             # Calculate final pressure array
-            p[iargsold[1]-i:iargs[1]-i] = C[iargsold[1]:iargs[1]]/mdiv(self.S[i])
+            p[iargsold[1]-i:iargs[1]-i] = C[iargsold[1]:iargs[1]]/self.S[i]
             iargsold = iargs
-          p[iargsold[1]-(i+1):] = C[iargsold[1]:]/mdiv(self.S[-1])
+          p[iargsold[1]-(i+1):] = C[iargsold[1]:]/self.S[-1]
         else:
           yp = y
-          p = C/mdiv(self.S[0])
+          p = C/self.S[0]
 
 
         # Plot either concentration or pressure
@@ -743,7 +738,7 @@ class layered1D:
     """
 
     # Get linear coefficients relating pressure to molar flux
-    k = self.P/mdiv(self.L)
+    k = self.P/self.L
 
     # Treat low layer number cases seperately
     # Evaluate pressure, concentration, and molar flux at relevant grid points
@@ -757,7 +752,7 @@ class layered1D:
       p = np.zeros(3)
       p[0] = self.p0
       p[-1] = self.p1
-      p[1] = k[0]*p[0]/mdiv(k[0]+k[1])
+      p[1] = k[0]*p[0]/(k[0]+k[1])
       J = k[0]*(p[0]-p[1])
       C = np.zeros(4)
       C[:2] = p[:2]*self.S[0]

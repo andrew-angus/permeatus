@@ -249,10 +249,10 @@ def write_abaqus_diffusion(D,S,C0,C1,touts,tstep,\
         f.write(f'*Physical Constants, absolute zero=0.\n')
 
         # Diffusion step details
-        maxinc = round(touts[-1]/mdiv(tstep)*10)
+        maxinc = round(touts[-1]/tstep*10)
         f.write(f'*Step, name=diffusion, nlgeom=NO, inc={maxinc}\n')
         f.write(f'*Mass Diffusion, end=PERIOD, dcmax={C0-C1}\n')
-        f.write(f'{tstep}, {touts[-1]}, {tstep/mdiv(10)}, {tstep*10},\n')
+        f.write(f'{tstep}, {touts[-1]}, {tstep/10}, {tstep*10},\n')
         f.write(f'*Boundary\n')
         f.write(f'sink, 11, 11, {C1}\n')
         f.write(f'*Boundary\n')
@@ -262,8 +262,3 @@ def write_abaqus_diffusion(D,S,C0,C1,touts,tstep,\
         f.write(f'*Element Output, directions=YES\n')
         f.write(f'CONC, MFL, IVOL\n')
         f.write(f'*End Step\n')
-
-# Avoid divisions by zero
-def mdiv(diver):
-  return np.where(np.abs(diver) > np.finfo(np.float64).tiny, \
-      diver, np.finfo(np.float64).tiny)
