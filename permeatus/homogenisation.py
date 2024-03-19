@@ -16,59 +16,14 @@ from scipy.optimize import brentq
 class homogenisation(layered1D):
 
   # Initialisation arguments
-  def __init__(self,materials,touts=None,D=None,S=None,P=None,\
-               C0=None,C1=None,p0=None,p1=None,\
-               tstep=None,ncpu=1,\
-               vFrac=None,AR=None,solver='abaqus',\
-               jobname='job',directory='.',verbose=True):
+  def __init__(self, vFrac: ArrayLike, AR: Optional[ArrayLike] = None, *args, **kwargs):
 
-    # Assign attributes
-    self.materials = materials
-    self.D = D
-    self.S = S
-    self.P = P
-    self.C0 = C0
-    self.C1 = C1
-    self.p0 = p0
-    self.p1 = p1
-    self.touts = touts
-    self.tstep = tstep
-    self.ncpu = ncpu
-    self.solver = solver
-    self.jobname = jobname
-    self.directory = directory
-    self.verbose = verbose
+    # Call parent init
+    super().__init__(*args, **kwargs)
 
     # Attributes unique to this class
     self.vFrac = vFrac
     self.AR = AR
-
-    # Initialise derivative attributes
-    if self.touts is not None:
-      self.frames = len(self.touts)+1
-    self.field = {}
-    self.Pavg = None
-    self.Davg = None
-    self.Savg = None
-    self.nodeSets = [None for i in range(self.materials)]
-    self.interfaceNodes = np.empty(0)
-
-    # Calculate P from DS, or vice versa
-    if self.D is not None:
-      self.P = self.D*self.S
-    elif self.P is not None:
-      self.D = self.P
-      self.S = np.ones_like(self.D)
-
-    # Calculate one BC from the other
-    if self.p0 is not None:
-      self.C0 = self.p0*self.S[0]
-    elif self.C0 is not None:
-      self.p0 = self.C0/mdiv(self.S[0])
-    if self.p1 is not None:
-      self.C1 = self.p1*self.S[-1]
-    elif self.C1 is not None:
-      self.p1 = self.C1/mdiv(self.S[-1])
 
   # Create microstructure mesh by random insertion or 
   # Lubachevsky-Stillinger algorithm
@@ -104,7 +59,7 @@ class homogenisation(layered1D):
     # Bounding box - scale to desired volume fraction
     area0 = np.pi*r**2
     area1 = nc*area0
-    area2 = area1/vfrac
+    area2 = area1/mdiv(vfrac)
     boxsize = np.sqrt(area2)
     gmsh.model.occ.addRectangle(0,0,0,boxsize,boxsize,tag=1)
 
@@ -137,7 +92,7 @@ class homogenisation(layered1D):
       rt = 0 # r(t)
       rf = r + eps/2 # Final radius, including minimum spacing
       h = rf # Radius growth rate
-      tf = rf/h # Final time
+      tf = rf/mdiv(h) # Final time
       parthits = np.ones((nc,nc))*np.inf # Matrix of particle collision times
       niter = 0 # Iteration counter
 
@@ -326,7 +281,7 @@ class homogenisation(layered1D):
     # Construct layers
     boxsize = 1
     dx = boxsize
-    dy = boxsize/nlayer
+    dy = boxsize/mdiv(nlayer)
     for i in range(nlayer):
         gmsh.model.occ.addRectangle(0,i*dy,0,dx,dy,tag=i)
 
@@ -344,7 +299,7 @@ class homogenisation(layered1D):
     gmsh.model.occ.synchronize()
 
     # Define structured mesh with seeded edges
-    eps = 1e-3/nlayer
+    eps = 1e-3/mdiv(nlayer)
     for i in range(2):
         ents = gmsh.model.getEntitiesInBoundingBox(-eps+i*dx,-eps,-eps,eps+i*dx,eps+boxsize,eps,1)
         for j in ents:
@@ -412,7 +367,7 @@ class homogenisation(layered1D):
 
     # Construct layers
     boxsize = 1
-    dx = boxsize/nlayer
+    dx = boxsize/mdiv(nlayer)
     dy = boxsize
     for i in range(nlayer):
       gmsh.model.occ.addRectangle(i*dx,0,0,dx,dy,tag=i)
@@ -431,7 +386,7 @@ class homogenisation(layered1D):
     gmsh.model.occ.synchronize()
 
     # Define structured mesh with seeded edges
-    eps = 1e-3/nlayer
+    eps = 1e-3/mdiv(nlayer)
     for i in range(2):
       ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+i*dy,-eps,boxsize+eps,eps+i*dy,eps,1)
       for j in ents:
@@ -458,21 +413,23 @@ class homogenisation(layered1D):
     gmsh.fltk.run()
     gmsh.finalize()
 
+  # Get effective coefficients by numerical averaging
+  def get_eff_coeffs(self):
+    super().get_eff_coeffs(method='numerical')
+
   # Analytical Reuss bound
   def reuss_bound(self):
 
-    self.P_eff = 1/np.sum(self.vFrac/self.P)
-    self.D_eff = 1/np.sum(self.vFrac/self.D)
-    self.S_eff = self.P_eff/self.D_eff
+    self.P_eff = 1/mdiv(np.sum(self.vFrac/mdiv(self.P)))
+    self.D_eff = 1/mdiv(np.sum(self.vFrac/mdiv(self.D)))
+    self.S_eff = self.P_eff/mdiv(self.D_eff)
 
   # Analytical Voigt bound
   def voigt_bound(self):
 
     self.P_eff = np.sum(self.vFrac*self.P)
-    #self.D_eff = np.sum(self.vFrac*self.D)
-    #self.S_eff = self.P_eff/self.D_eff
     self.S_eff = np.sum(self.vFrac*self.S)
-    self.D_eff = self.P_eff/self.S_eff
+    self.D_eff = self.P_eff/mdiv(self.S_eff)
 
   # Hashin-Strikman upper bound
   def HS_upper_bound(self):
@@ -495,14 +452,12 @@ class homogenisation(layered1D):
     res = []
     for i in [self.P,self.D,self.S]:
       hi, lo = i[hix], i[lox]
-      res.append(hi + vF/(1/(lo-hi)+(1-vF)/(3*hi)))
+      res.append(hi + vF/mdiv(1/mdiv(lo-hi)+(1-vF)/mdiv(3*hi)))
 
     # Assign results
     self.P_eff = res[0]
-    #self.D_eff = res[1]
     self.S_eff = res[2]
-    #self.S_eff = self.P_eff/self.D_eff
-    self.D_eff = self.P_eff/self.S_eff
+    self.D_eff = self.P_eff/mdiv(self.S_eff)
 
   # Hashin-Strikman lower bound
   def HS_lower_bound(self):
@@ -525,14 +480,12 @@ class homogenisation(layered1D):
     res = []
     for i in [self.P,self.D,self.S]:
       hi, lo = i[hix], i[lox]
-      res.append(lo + (1-vF)/(1/(hi-lo)+vF/(3*lo)))
+      res.append(lo + (1-vF)/mdiv(1/mdiv(hi-lo)+vF/mdiv(3*lo)))
 
     # Assign results
     self.P_eff = res[0]
     self.D_eff = res[1]
-    #self.S_eff = res[2]
-    self.S_eff = self.P_eff/self.D_eff
-    #self.D_eff = self.P_eff/self.S_eff
+    self.S_eff = self.P_eff/mdiv(self.D_eff)
 
   # Get prediction of Nielsen model
   def nielsen(self):
@@ -557,15 +510,11 @@ class homogenisation(layered1D):
     # Evaluate effective coefficients
     self.P_eff = self.P[0]* \
         (2*self.P[0]+self.P[1]-2*(self.P[0]-self.P[1])*self.vFrac[1])/ \
-        (2*self.P[0]+self.P[1]+(self.P[0]-self.P[1])*self.vFrac[1])
+        mdiv(2*self.P[0]+self.P[1]+(self.P[0]-self.P[1])*self.vFrac[1])
     self.D_eff = self.D[0]* \
         (2*self.D[0]+self.D[1]-2*(self.D[0]-self.D[1])*self.vFrac[1])/ \
-        (2*self.D[0]+self.D[1]+(self.D[0]-self.D[1])*self.vFrac[1])
-    self.S_eff = self.P_eff/self.D_eff
-    #self.S_eff = self.S[0]* \
-    #    (2*self.S[0]+self.S[1]-2*(self.S[0]-self.S[1])*self.vFrac[1])/ \
-    #    (2*self.S[0]+self.S[1]+(self.S[0]-self.S[1])*self.vFrac[1])
-    #self.D_eff = self.P_eff/self.S_eff
+        mdiv(2*self.D[0]+self.D[1]+(self.D[0]-self.D[1])*self.vFrac[1])
+    self.S_eff = self.P_eff/mdiv(self.D_eff)
 
   # Get prediction of Bruggeman model
   def bruggeman(self):
@@ -579,10 +528,7 @@ class homogenisation(layered1D):
     self.P_eff = 0.25*(Pterm+np.sqrt(Pterm**2+8*self.P[0]*self.P[1]))
     Dterm = (3*self.vFrac[1]-1)*self.D[1]+(3*self.vFrac[0]-1)*self.D[0]
     self.D_eff = 0.25*(Dterm+np.sqrt(Dterm**2+8*self.D[0]*self.D[1]))
-    self.S_eff = self.P_eff/self.D_eff
-    #Sterm = (3*self.vFrac[1]-1)*self.S[1]+(3*self.vFrac[0]-1)*self.S[0]
-    #self.S_eff = 0.25*(Sterm+np.sqrt(Sterm**2+8*self.S[0]*self.S[1]))
-    #self.D_eff = self.P_eff/self.S_eff
+    self.S_eff = self.P_eff/mdiv(self.D_eff)
 
   # Get prediction of Chen model
   def chen(self):
@@ -593,13 +539,21 @@ class homogenisation(layered1D):
 
     # Evaluate effective coefficients
     def Proot(P_eff):
-      f = P_eff/self.P[0]
-      x = self.P[1]/self.P[0]
-      return self.vFrac[0]**2*((1-x)/(f-x))**2*f - 1
+      f = P_eff/mdiv(self.P[0])
+      x = self.P[1]/mdiv(self.P[0])
+      return self.vFrac[0]**2*((1-x)/mdiv(f-x))**2*f - 1
     self.P_eff = brentq(Proot,self.P[0],self.P[1])
     def Droot(D_eff):
-      f = D_eff/self.D[0]
-      x = self.D[1]/self.D[0]
-      return self.vFrac[0]**2*((1-x)/(f-x))**2*f - 1
+      f = D_eff/mdiv(self.D[0])
+      x = self.D[1]/mdiv(self.D[0])
+      return self.vFrac[0]**2*((1-x)/mdiv(f-x))**2*f - 1
     self.D_eff = brentq(Droot,self.D[0],self.D[1])
-    self.S_eff = self.P_eff/self.D_eff
+    self.S_eff = self.P_eff/mdiv(self.D_eff)
+
+  # Shuts off redundant inherited steady state method
+  def steady_state(self):
+    raise NotImplementedError
+
+  # Shuts off redundant inherited plot_1d method
+  def plot_1d(self):
+    raise NotImplementedError

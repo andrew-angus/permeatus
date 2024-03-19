@@ -6,7 +6,7 @@ build-backend = "flit_core.buildapi"
 name = "permeatus"
 version = "1.0.0"
 authors = [
-  {name = "Andrew Angus", email = "andrewangus27@gmail.com"},
+  {name = "Andrew Angus"},
 ]
 description = "Permeation modelling tools built around finite element analysis."
 readme = "README.md"
@@ -16,8 +16,9 @@ dependencies = [
   "matplotlib",
   "gmsh",
   "pandas",
-  "scipy"
+  "scipy",
+  "typeguard"
 ]
 
 [project.urls]
-Repository = "https://github.com/andrew-angus/permeatus.git"
+Repository = "https://github.com/lwfig/permeatus.git"

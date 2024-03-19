@@ -20,11 +20,12 @@ from importlib.resources import files
 from permeatus.utils import *
 import permeatus
 import subprocess
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
 from typeguard import typechecked
 
 # Custom types
 ArrayLike = Union[list,np.ndarray]
+
 
 
 @typechecked
@@ -119,6 +120,8 @@ class layered1D:
   D_eff: float
   S_eff: float
 
+
+
   def __init__(self, materials: int, L: ArrayLike, 
       D: Optional[ArrayLike] = None, S: Optional[ArrayLike] = None, \
       P: Optional[ArrayLike] = None, C0: Optional[float] = None, 
@@ -150,9 +153,9 @@ class layered1D:
         D = P
         S = np.ones_like(P)
       elif D is None:
-        D = P/S
+        D = P/mdiv(S)
       else:
-        S = P/D
+        S = P/mdiv(D)
     else:
       raise Exception('Either P or D & S must be specified')
 
@@ -223,22 +226,16 @@ class layered1D:
     self.D_eff = None
     self.S_eff = None
 
-    #TODO replace with standard field dict
-    self.J = None
-    self.p = None
-    self.C = None
-    self.x = None
-    self.xc = None
 
-  def layered_mesh(self, N: list[int]):
 
+  def layered_mesh(self, N: ArrayLike):
     """Create mesh using Gmsh for solving layered system in Abaqus.
 
     Parameters
     ----------
 
     N
-      Number of computational cells assigned to each layer, 
+      Integer number of computational cells assigned to each layer, 
       if modelling with ABAQUS.
 
     """
@@ -316,14 +313,18 @@ class layered1D:
     gmsh.fltk.run()
     gmsh.finalize()
 
-  # Submit FEA job (only Abaqus for now)
+
+
   def submit_job(self):
     """Submit Abaqus job.
     
     Mesh creation should be conducted prior to job submission.
 
     The output files C.csv, J.csv, and V.csv are produced, with concentration,
-    flux, and integration point volumes respectively.
+    flux, and integration point volumes respectively. These are produced from a
+    python script submitted to Abaqus cae which processes the .odb output database.
+    The script template is located in permeatus/data/abaqus_postscript.py, relative
+    to the package root directory.
 
     """
 
@@ -333,7 +334,6 @@ class layered1D:
       subprocess.call(['rm',"C.csv"],stderr=subprocess.DEVNULL)
       subprocess.call(['rm',"V.csv"],stderr=subprocess.DEVNULL)
       subprocess.call(['rm',"J.csv"],stderr=subprocess.DEVNULL)
-      subprocess.call(['rm',"p.csv"],stderr=subprocess.DEVNULL)
     except:
       pass
 
@@ -363,6 +363,8 @@ class layered1D:
           # Write other lines unchanged
           else:
             o.write(row)
+
+    # Pass script to abaqus cae to produce csv output files
     if self.verbose:
       subprocess.call(['abaqus','cae','noGui=abaqus_postscript.py'])
       print('DONE')
@@ -371,11 +373,31 @@ class layered1D:
       stdout=subprocess.DEVNULL, \
       stderr=subprocess.STDOUT)
 
-  # Read field data output from abaqus csv file
-  def read_field(self,target='C',targetdir=None):
+
+
+  def read_field(self,target: str):
+    """Read field data output from Abaqus csv file
+
+    Process Abaqus output csv file into class attribute field dictionary.
+    Field dictionary has the following layout: 
+    field[<field>][<frame>] = {'x': <x co-ordinates>, 'y': <y co-ordinates>,
+    'data': <field data>, 'material': <material number>}
+    
+    The integration volume field is only stored for a single frame 0, as it
+    will be unchanged through time.
+
+    Must have run submit_job() to produce the required csv files.
+
+    Parameters
+    ----------
+
+    target
+      Specify target field; must be one of 'C', 'J', or 'V'.
+
+    """
 
     # Target check
-    targets = ['C','p','J','V']
+    targets = ['C','J','V']
     if target not in targets:
       raise Exception(f'target must be one of {targets}')
 
@@ -388,11 +410,8 @@ class layered1D:
     if target == 'C':
       fieldkeys = ['CONC']
       fieldsize = 1
-    if target == 'V':
+    elif target == 'V':
       fieldkeys = ['IVOL']
-      fieldsize = 1
-    if target == 'p':
-      fieldkeys = ['NNC11']
       fieldsize = 1
     elif target == 'J':
       fieldsize = 2
@@ -443,9 +462,183 @@ class layered1D:
               np.array([[float(row[fieldkey]) for fieldkey in fieldkeys]])]
 
 
-  # Plot 1D solution
-  def plot_1d(self,target='C',showplot=True,timemask=None,plotlabels=None):
 
+  def get_eff_coeffs(self,method='numerical'):
+    """Get effective coefficients of system by desired method
+
+    Get effective coefficients by either numerical averaging or by 
+    analytical solution to layered system (Reuss bound solution). The
+    results are stored in the class attributes P_eff, D_eff, S_eff.
+
+    Parameters
+    ----------
+
+    method
+      Desired method; one of 'numerical' or 'analytical'
+
+    """
+
+    if method == 'numerical':
+
+      # Check if concentration and pressure gradient data calculated
+      if self.field == {} or 'C' not in self.field.keys() or \
+          'J' not in self.field.keys() or 'p' not in self.field.keys() or \
+          'grad' not in self.field['C'][-1].keys() or \
+          'grad' not in self.field['p'][-1].keys():
+        self.get_gradC()
+        self.get_gradp()
+
+      # Check if volume data available
+      if 'V' not in self.field.keys():
+        self.read_field('V')
+
+      self.D_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/\
+          mdiv(self.V_mean(self.field['C'][-1]['grad'][:,1]))
+      self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
+          mdiv(self.V_mean(self.field['p'][-1]['grad'][:,1]))
+      self.S_eff = self.P_eff/mdiv(self.D_eff)
+
+    elif method == 'analytical':
+
+      self.P_eff = 1/mdiv(np.sum(self.L/mdiv(self.totL*self.P)))
+      self.D_eff = 1/mdiv(np.sum(self.L/mdiv(self.totL*self.D)))
+      self.S_eff = self.P_eff/mdiv(self.D_eff)
+
+
+
+  def get_P_eff(self):
+    """Get effective permeability of system by numerical averaging.
+    
+    The result is stored in the P_eff class attribute.
+
+    """
+    # Check if concentration and pressure gradient data calculated
+    if self.field == {} or \
+        'J' not in self.field.keys() or 'p' not in self.field.keys() or \
+        'grad' not in self.field['p'][-1].keys():
+      self.get_gradp()
+
+    # Check if volume data available
+    if 'V' not in self.field.keys():
+      self.read_field('V')
+
+    self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
+        mdiv(self.V_mean(self.field['p'][-1]['grad'][:,1]))
+
+
+
+  def V_mean(self,field: ArrayLike) -> float:
+    """Return integration point volume weighted mean of field.
+    
+    Parameters
+    ----------
+    field
+      The field to be averaged by integration point volume weighting.  
+
+    Returns
+    -------
+
+    float
+      Volume-weighted average of field
+
+
+
+    """
+    sumfieldV = np.sum(field*self.field['V'][-1]['data'][:,0])
+    sumV = np.sum(self.field['V'][-1]['data'])
+    Vmean = sumfieldV/mdiv(sumV)
+    return Vmean
+
+
+
+  def get_gradC(self):
+    """Calculate concentration gradient at integration points
+
+    Calculate concentration gradient field from flux and concentration solutions,
+    via Fick's first law. Store result in dictionary under 'grad' key.
+
+    """
+
+    # Read fields if not already read
+    if 'J' not in self.field.keys():
+      self.read_field('J')
+    if 'C' not in self.field.keys():
+      self.read_field('C')
+
+    # Loop through frames and calculate gradient by Fick's first law
+    for i in range(self.frames):
+      D = np.array([self.D[j] for j in self.field['J'][i]['material']])[:,None]
+      self.field['C'][i]['grad'] = -self.field['J'][i]['data']/mdiv(D)
+
+
+
+  def get_gradp(self):
+    """Calculate pressure gradient at integration points
+
+    Calculate pressure gradient field from flux and pressure solutions,
+    via Darcy's law. Store result in dictionary under 'grad' key.
+
+    """
+
+    # Get pressure field if non-existent
+    if 'p' not in self.field.keys():
+      self.get_p()
+    if 'J' not in self.field.keys():
+      self.read_field('J')
+
+    # Loop through frames and calculate gradient by Darcy's first law
+    for i in range(self.frames):
+      P = np.array([self.P[j] for j in self.field['J'][i]['material']])[:,None]
+      self.field['p'][i]['grad'] = -self.field['J'][i]['data']/mdiv(P)
+
+
+
+  def get_p(self):
+    """Calculate pressure field at integration points
+
+    Calculate pressure field from concentration solution and solubilities.
+    Store result in field attribute.
+
+    """
+    # Get concentration field if non-existent
+    if 'C' not in self.field.keys():
+      self.read_field('C')
+
+    # Loop through frames and calculate pressure via solubility coefficient
+    self.field['p'] = [None for i in range(self.frames)]
+    for i in range(self.frames):
+      self.field['p'][i] = {}
+      self.field['p'][i]['x'] = self.field['C'][i]['x']
+      self.field['p'][i]['y'] = self.field['C'][i]['y']
+      self.field['p'][i]['material'] = self.field['C'][i]['material']
+      S = np.array([self.S[j] for j in self.field['C'][i]['material']])
+      self.field['p'][i]['data'] = -self.field['C'][i]['data']/mdiv(S)
+
+
+
+  # Plot 1D solution
+  def plot_1d(self, plotTarget: str = 'C', showPlot: bool = True, \
+      timemask: Optional[ArrayLike] = None):
+    """Plot 1D layered solution from numerical data
+
+    Numerical fields for the target should be read previous to calling this method.
+
+    Parameters
+    ----------
+
+    plotTarget
+      One of 'C' or 'p', to determine whether concentration or pressure solutions 
+      are plotted.
+    showPlot
+      Control whether to show plot immediately or delay (useful to compile multiple
+      plots in one figure).
+    timemask
+      Boolean array the same length as the number of frames, which controls whether
+      to plot that frame.
+
+    """
+
+    # Default time mask is true for all frames
     if timemask is None:
       timemask = [True for i in range(self.frames)]
 
@@ -477,7 +670,7 @@ class layered1D:
 
             # Get interfacial pressure and swap points if not matching
             Cint = C[iargs]
-            pint = Cint/self.S[i:i+2]
+            pint = Cint/mdiv(self.S[i:i+2])
             if not np.isclose(pint[0],pint[1],atol=1e-8,rtol=1e-5):
               y[iargs[0]], y[iargs[1]] = y[iargs[1]], y[iargs[0]]
               C[iargs[0]], C[iargs[1]] = C[iargs[1]], C[iargs[0]]
@@ -488,62 +681,66 @@ class layered1D:
           p[iargsold[1]-(i+1):] = C[iargsold[1]:]/mdiv(self.S[-1])
         else:
           yp = y
-          p = C/self.S[0]
+          p = C/mdiv(self.S[0])
 
 
-        #TODO Plot either concentration or pressure
+        # Plot either concentration or pressure
         if plotlabels is None or plotlabels[frame] is None:
           label = f"{self.field['C'][frame]['t']:0.3f} s"
-        else:
-          label = plotlabels[frame]
         if target == 'C':
           plt.plot(y,C,label=label)
-        else:
+        elif target == 'p':
           plt.plot(yp,p,label=label)
 
     # Finalise plotting
     plt.legend()
-    plt.xlabel(r'$z$ [$m$]')
+    plt.xlabel(r'x')
     if target == 'C':
-      plt.ylabel(r'$C$ [mol$m^{-3}$]')
+      plt.ylabel(r'C')
     else:
-      plt.ylabel(r'$p$ [Pa]')
+      plt.ylabel(r'p')
     if showplot:
       plt.show()
 
-  # Calculate concentration gradient
-  def get_gradC(self):
 
-    # Read fields if not already read
-    if 'J' not in self.field.keys():
-      self.read_field('J')
-    if 'C' not in self.field.keys():
-      self.read_field('C')
 
-    # Loop through frames and calculate gradient by Fick's first law
-    for i in range(self.frames):
-      D = np.array([self.D[j] for j in self.field['J'][i]['material']])[:,None]
-      self.field['C'][i]['grad'] = -self.field['J'][i]['data']/D
+  def steady_state(self, plot: bool = False, plotTarget: str = 'C', \
+      showPlot: bool = True) \
+      -> Tuple[np.ndarray,np.ndarray,np.ndarray,np.ndarray,float]:
+    """1D finite element steady state solution
 
-  # Calculate pressure gradient
-  def get_gradp(self):
+    Get steady-state solution with native 1D finite element solver. The method 
+    calculates the pressure and concentration solutions at layer boundaries, as well
+    as the scalar flux solution. The concentration solution will be dual-valued at 
+    internal boundaries. Optional plotting is controlled by function arguments.
 
-    # Get pressure field if non-existent
-    #TODO calculate pressure from concentration and solubility to get at integration points
-    if 'p' not in self.field.keys():
-      self.read_field('p')
-    if 'J' not in self.field.keys():
-      self.read_field('J')
+    Parameters
+    ----------
 
-    # Loop through frames and calculate gradient by Darcy's first law
-    for i in range(self.frames):
-      P = np.array([self.P[j] for j in self.field['J'][i]['material']])[:,None]
-      self.field['p'][i]['grad'] = -self.field['J'][i]['data']/P
+    plot
+      Control whether to plot solution.
+    plotTarget
+      One of 'C' or 'p', to determine whether concentration or pressure solutions 
+      are plotted.
+    showPlot
+      Control whether to show plot immediately or delay (useful to compile multiple
+      plots in one figure).
 
-  # Linear algebra steady state solution
-  #TODO Update field quantities for better integration with other parts of code
-  def steady_state(self,y='C',plot=False,showplot=True,\
-      plotlabel='steady-state'):
+    Returns
+    -------
+
+    x
+      Spatial points of pressure solution
+    p
+      Pressure solution
+    xc
+      Spatial points of concentration solution
+    C
+      Concentration solution
+    J
+      Scalar flux solution
+
+    """
 
     # Get linear coefficients relating pressure to molar flux
     k = self.P/mdiv(self.L)
@@ -610,90 +807,16 @@ class layered1D:
 
     # Optionally plot
     if plot:
-      if y == 'C':
+      if plotTarget == 'C':
         plt.plot(xc,C,'-x',label=plotlabel)
-        plt.ylabel(r'$C$ [mol$m^{-3}$]')
+        plt.ylabel('C')
       else:
         plt.plot(x,p,'-x',label=plotlabel)
-        plt.ylabel(r'$p$ [Pa]')
-      plt.xlabel(r'$x$ [$m$]')
+        plt.ylabel('p')
+      plt.xlabel(r'x')
       if showplot:
         plt.show()
 
-    # Store and return results
-    self.x = x
-    self.p = p
-    self.J = J
-    self.xc = xc
-    self.C = C
-    self.dp = np.diff(p)/self.L
-    self.dC = np.array([(C[i+1]-C[i])/self.L[i//2] for i in range(0,len(C)-1,2)])
-
-    if y == 'C':
-      return xc, C, J
-    else:
-      return x, p, J
-
-  # Calculate average steady state molar flux and store result
-  def get_molar_flux(self,method='data'):
-
-    # Either calculate average of abaqus data or use steady-state 1D FEA
-    if method == 'data':
-      if self.field is None:
-        self.read_field('J')
-      self.J = np.mean(self.field['J'][-1]['data'][:,1])
-    elif method == 'steady-state':
-      scrap,scrap,self.J = self.steady_state()
-
-  #TODO calculate mass diffusion
-  def get_mass_diffusion(self):
-    pass
-
-  #TODO calculate flowrate
-  def get_flowrate(self):
-    pass
-
-  # Get effective coefficients of system by numerical averaging
-  #TODO Work in terms of tensors
-  def get_eff_coeffs(self):
-
-    # Check if concentration and pressure gradient data calculated
-    if self.field == {} or 'C' not in self.field.keys() or \
-        'J' not in self.field.keys() or 'p' not in self.field.keys() or \
-        'grad' not in self.field['C'][-1].keys() or \
-        'grad' not in self.field['p'][-1].keys():
-      self.get_gradC()
-      self.get_gradp()
-
-    # Check if volume data available
-    if 'V' not in self.field.keys():
-      self.read_field('V')
-
-    self.D_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/\
-        self.V_mean(self.field['C'][-1]['grad'][:,1])
-    self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
-        self.V_mean(self.field['p'][-1]['grad'][:,1])
-    self.S_eff = self.P_eff/self.D_eff
-
-  # Get effective permeability of system by numerical averaging
-  def get_P_eff(self):
-
-    # Check if concentration and pressure gradient data calculated
-    if self.field == {} or \
-        'J' not in self.field.keys() or 'p' not in self.field.keys() or \
-        'grad' not in self.field['p'][-1].keys():
-      self.get_gradp()
-
-    # Check if volume data available
-    if 'V' not in self.field.keys():
-      self.read_field('V')
-
-    self.P_eff = -self.V_mean(self.field['J'][-1]['data'][:,1])/ \
-        self.V_mean(self.field['p'][-1]['grad'][:,1])
-
-  # Return volume weighted mean of last timestep in field
-  def V_mean(self,field):
-    sumfieldV = np.sum(field*self.field['V'][-1]['data'][:,0])
-    sumV = np.sum(self.field['V'][-1]['data'])
-    return sumfieldV/sumV
+    # Return results
+    return x, xc, p, C, J
 

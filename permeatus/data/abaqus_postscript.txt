@@ -26,6 +26,3 @@ session.writeFieldReport(fileName='J.csv', append=OFF,
 session.writeFieldReport(fileName='V.csv', append=OFF,
     sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=INTEGRATION_POINT,
     variable=(('IVOL', INTEGRATION_POINT), ), stepFrame=SPECIFY)
-session.writeFieldReport(fileName='p.csv', append=OFF,
-    sortItem='Node Label', odb=odb, step=0, frame=0, outputPosition=NODAL,
-    variable=(('NNC11', NODAL), ), stepFrame=ALL)
