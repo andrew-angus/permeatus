@@ -1,0 +1,4 @@
+Bibliography
+============
+
+.. bibliography:: Hydrogen.bib

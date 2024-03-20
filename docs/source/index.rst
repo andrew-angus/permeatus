@@ -33,3 +33,4 @@ Contents
 
    usage
    api
+   bibliography
