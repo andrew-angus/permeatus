@@ -68,10 +68,121 @@ class homogenisation(layered1D):
     elif self.C1 is not None:
       self.p1 = self.C1/mdiv(self.S[-1])
 
+  def ebbermanmeshrectangular(self,r,lc):
+    gmsh.initialize()
+
+    # Add model and set options
+    gmsh.model.add("random")
+    gmsh.option.setNumber("Mesh.SaveGroupsOfNodes", 1)
+
+    # Bounding box
+    boxwidth = 0.629e-3
+    boxheight = 1.089e-3
+    gmsh.model.occ.addRectangle(0,0,0,boxwidth,boxheight,tag=1)
+    eps = 1e-5
+    
+
+    # Translations
+    translationwidth = np.array([-boxwidth,0.0,boxwidth])
+    translationheight = np.array([-boxheight,0.0,boxheight])
+    translations = np.array([[i,j] for i in translationwidth for j in translationheight])
+
+    # Add circles
+    c = np.array([[0.0,0.0],[boxwidth/2,boxheight/2]])
+    nc = len(c)
+    #vFrac=1
+    # Add circles with periodic wrapping
+    boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxwidth, boxheight, r,eps)
+    
+        # Identify physical groups for material assignment
+    ents = gmsh.model.getEntities(2)
+    ents.remove(boxdimtag)
+    gmsh.model.addPhysicalGroup(2, [boxtag], name="material0")
+    gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="material1")
+    
+    # Enforce periodic mesh on x-bounds
+    periodic_mesh(gmsh.model,boxwidth,eps)
+    
+    # Generate mesh
+    gmsh.model.occ.synchronize()
+    gmsh.option.setNumber("Mesh.MeshSizeMin",lc)
+    gmsh.option.setNumber("Mesh.MeshSizeMax",lc)
+    gmsh.model.mesh.generate(2)
+    
+    # Acquire boundary node sets
+    gmsh.model.occ.synchronize()
+    bottomnodes, topnodes, leftnodes, rightnodes = \
+        boundary_nodes_2d(gmsh.model,boxwidth,boxheight)
+    
+    # Write output and finalise
+    write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
+        bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
+    
+    gmsh.fltk.run()
+    
+    gmsh.finalize()
+
+                                      
+  # Ebberman Paper Mesh  
+  def ebbermanmesh(self,r,lc):
+        
+    V2 = self.vFrac[1]    
+        
+    w = ((2*3.14*0.26*0.26)/(1.732*V2))**0.5
+    #h = 1.732*w
+    h = w
+    boxsize = h
+    eps = 1e-3
+
+    gmsh.initialize()
+    gmsh.model.add("RVE1")
+    
+    # Bounding box
+    gmsh.model.occ.addRectangle(0,0,0,w,h,tag=1)
+
+    # Translations
+    translationbase = np.array([-boxsize,0.0,boxsize])
+    translations = np.array([[i,j] for i in translationbase for j in translationbase])
+
+    # Add circles
+    c = np.array([[0.0,0.0],[w/2,h/2]])
+    nc = len(c)
+
+    # Add circles with periodic wrapping
+    boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxsize,r,eps)
+
+    # Identify physical groups for material assignment
+    ents = gmsh.model.getEntities(2)
+    ents.remove(boxdimtag)
+    gmsh.model.addPhysicalGroup(2, [boxtag], name="material0")
+    gmsh.model.addPhysicalGroup(2, [i[1] for i in ents], name="material1")
+
+    # Enforce periodic mesh on x-bounds
+    periodic_mesh(gmsh.model,boxsize,eps)
+    
+    # Generate mesh
+    gmsh.model.occ.synchronize()
+    gmsh.option.setNumber("Mesh.MeshSizeMin",lc)
+    gmsh.option.setNumber("Mesh.MeshSizeMax",lc)
+    gmsh.model.mesh.generate(2)
+    
+    # Acquire boundary node sets
+    gmsh.model.occ.synchronize()
+    bottomnodes, topnodes, leftnodes, rightnodes = \
+        boundary_nodes_2d(gmsh.model,w,h)
+
+    # Write output and finalise
+    write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
+        bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
+    
+    gmsh.fltk.run()
+    
+    gmsh.finalize()
+
   # Create microstructure mesh by random insertion or 
   # Lubachevsky-Stillinger algorithm
-  def cross_section_mesh(self,nc,r=0.1,minSpaceFac=0.1,maxMeshFac=0.4,\
-      algorithm='LS',showmesh=False,seed=None):
+  def cross_section_mesh(self,nc,r,minSpaceFac=0.1,maxMeshFac=0.1,\
+      algorithm='LS',showmesh=True,seed=None):
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -263,7 +374,7 @@ class homogenisation(layered1D):
         c = np.r_[c,newc]
 
     # Add circles with periodic wrapping
-    boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxsize,r,eps)
+    boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxsize,boxsize,r,eps)
 
     # Identify physical groups for material assignment
     ents = gmsh.model.getEntities(2)

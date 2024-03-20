@@ -90,44 +90,44 @@ def bound_proximity_check_2d(c,r,eps,boxsize):
         and bottomleftprox and bottomrightprox and topleftprox and toprightprox
 
 # Add periodic copies of disks
-def periodic_copy(m,c,r,boxsize,maxtag):
+def periodic_copy(m,c,r,boxwidth,boxheight,maxtag):
 
     # Check for disk overlapping boundaries in all 8 periodic copies
     # Add translated disk if so
     if c[0]-r < 0.0:
-        m.addDisk(c[0]+boxsize,c[1],0,r,r,tag=maxtag+1)
+        m.addDisk(c[0]+boxwidth,c[1],0,r,r,tag=maxtag+1)
         maxtag += 1
-    if c[0]+r > boxsize:
-        m.addDisk(c[0]-boxsize,c[1],0,r,r,tag=maxtag+1)
+    if c[0]+r > boxwidth:
+        m.addDisk(c[0]-boxwidth,c[1],0,r,r,tag=maxtag+1)
         maxtag += 1
     if c[1]-r < 0.0:
-        m.addDisk(c[0],c[1]+boxsize,0,r,r,tag=maxtag+1)
+        m.addDisk(c[0],c[1]+boxheight,0,r,r,tag=maxtag+1)
         maxtag += 1
-    if c[1]+r > boxsize:
-        m.addDisk(c[0],c[1]-boxsize,0,r,r,tag=maxtag+1)
+    if c[1]+r > boxheight:
+        m.addDisk(c[0],c[1]-boxheight,0,r,r,tag=maxtag+1)
         maxtag += 1
     if np.linalg.norm(c)-r < 0.0:
-        m.addDisk(c[0]+boxsize,c[1]+boxsize,0,r,r,tag=maxtag+1)
+        m.addDisk(c[0]+boxwidth,c[1]+boxheight,0,r,r,tag=maxtag+1)
         maxtag += 1
-    if np.linalg.norm(c-np.array([0,boxsize]))-r < 0.0:
-        m.addDisk(c[0]+boxsize,c[1]-boxsize,0,r,r,tag=maxtag+1)
+    if np.linalg.norm(c-np.array([0,boxheight]))-r < 0.0:
+        m.addDisk(c[0]+boxwidth,c[1]-boxheight,0,r,r,tag=maxtag+1)
         maxtag += 1
-    if np.linalg.norm(c-np.array([boxsize,0]))-r < 0.0:
-        m.addDisk(c[0]-boxsize,c[1]+boxsize,0,r,r,tag=maxtag+1)
+    if np.linalg.norm(c-np.array([boxwidth,0]))-r < 0.0:
+        m.addDisk(c[0]-boxwidth,c[1]+boxheight,0,r,r,tag=maxtag+1)
         maxtag += 1
-    if np.linalg.norm(c-np.array([boxsize,boxsize]))-r < 0.0:
-        m.addDisk(c[0]-boxsize,c[1]-boxsize,0,r,r,tag=maxtag+1)
+    if np.linalg.norm(c-np.array([boxwidth,boxheight]))-r < 0.0:
+        m.addDisk(c[0]-boxwidth,c[1]-boxheight,0,r,r,tag=maxtag+1)
         maxtag += 1
     return maxtag
 
 # Periodic geometry for disks of specified centers and radius
-def periodic_disks(nc,centers,m,boxsize,r,eps):
+def periodic_disks(nc,centers,m,boxwidth,boxheight,r,eps):
 
     # Add disks and periodic copies where necessary
     maxtag = 1+nc
     for i,j in enumerate(centers):
         m.occ.addDisk(j[0],j[1],0,r,r,tag=i+2)
-        maxtag = periodic_copy(m.occ,j,r,boxsize,maxtag)
+        maxtag = periodic_copy(m.occ,j,r,boxwidth,boxheight,maxtag)
 
     # Fragment overlapping shapes
     out, pc = m.occ.fragment([(2, 1)], [(2, i) for i in range(2, maxtag+1)])
@@ -147,7 +147,7 @@ def periodic_disks(nc,centers,m,boxsize,r,eps):
 
     # Eliminate outsiders
     vin = m.getEntitiesInBoundingBox(-eps/2,-eps/2,-eps/2, \
-        boxsize+eps/2,boxsize+eps/2,eps/2,2)
+        boxwidth+eps/2,boxheight+eps/2,eps/2,2)
     for v in vin:
         out.remove(v)
     m.occ.remove(out,True)
@@ -156,7 +156,7 @@ def periodic_disks(nc,centers,m,boxsize,r,eps):
     return boxdimtag,boxtag
 
 # Enforce periodic mesh on x-bounds
-def periodic_mesh(m,boxsize,eps):
+def periodic_mesh(m,boxwidth,eps):
 
     # Loop through boundary lines
     ents = m.getEntities(2)
@@ -182,10 +182,10 @@ def periodic_mesh(m,boxsize,eps):
 
                     # Check for line directly opposite to set PBCs
                     if np.abs(xmin2-xmax2) < eps/2 and \
-                        np.abs((xmin2-xmin)-boxsize) < eps/2 and \
+                        np.abs((xmin2-xmin)-boxwidth) < eps/2 and \
                         np.abs(ymin-ymin2) < eps/2:
                         m.mesh.setPeriodic(1, [j[1]], [l[1]], \
-                            [1, 0, 0, -boxsize, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+                            [1, 0, 0, -boxwidth, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
 
 # Function to write node sets
 def nodeset(f,nodes):
