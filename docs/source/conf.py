@@ -43,6 +43,13 @@ extensions = [
 ]
 autoapi_dirs = ['../../permeatus']
 #autosummary_generate = True
+def skippers(app, what, name, obj, skip, options):
+    if what == "attribute":
+       skip = True
+    return skip
+
+def setup(sphinx):
+   sphinx.connect("autoapi-skip-member", skippers)
 
 #autodoc_default_options = {
 #    'members': True,

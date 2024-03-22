@@ -11,8 +11,17 @@ from permeatus.layered1D import *
 import permeatus
 import subprocess
 from scipy.optimize import brentq
+from typing import Optional, Union, Tuple
+from typeguard import typechecked
+
+# Exported objects
+__all__ = ['homogenisation']
+
+# Custom types
+ArrayLike = Union[list,np.ndarray]
 
 # Homogenisation class object
+@typechecked
 class homogenisation(layered1D):
   """Class for extracting effective properties from inhomogeneous systems.
 

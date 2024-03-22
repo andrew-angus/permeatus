@@ -6,8 +6,13 @@ from pandas import unique
 import copy
 from fractions import Fraction
 
+# Functions which are exported
+__all__ = ['boundary_nodes_2d','bound_proximity_check_2d','periodic_copy',\
+    'periodic_disks','periodic_mesh','write_abaqus_diffusion']
+
 ### Gmsh Functions ###
 # Get boundary node sets in 2D box setups
+@typechecked
 def boundary_nodes_2d(m,dx,dy):
 
   # Set up empty node and coordinate lists for each boundary
@@ -68,6 +73,7 @@ def boundary_nodes_2d(m,dx,dy):
 
 # Check that disk outer surface is not too close to a box boundary
 # which would distort mesh
+@typechecked
 def bound_proximity_check_2d(c,r,eps,boxsize):
 
     # Check bottom, left, top, right bounds
@@ -90,6 +96,7 @@ def bound_proximity_check_2d(c,r,eps,boxsize):
         and bottomleftprox and bottomrightprox and topleftprox and toprightprox
 
 # Add periodic copies of disks
+@typechecked
 def periodic_copy(m,c,r,boxwidth,boxheight,maxtag):
 
     # Check for disk overlapping boundaries in all 8 periodic copies
@@ -121,6 +128,7 @@ def periodic_copy(m,c,r,boxwidth,boxheight,maxtag):
     return maxtag
 
 # Periodic geometry for disks of specified centers and radius
+@typechecked
 def periodic_disks(nc,centers,m,boxwidth,boxheight,r,eps):
 
     # Add disks and periodic copies where necessary
@@ -156,6 +164,7 @@ def periodic_disks(nc,centers,m,boxwidth,boxheight,r,eps):
     return boxdimtag,boxtag
 
 # Enforce periodic mesh on x-bounds
+@typechecked
 def periodic_mesh(m,boxwidth,eps):
 
     # Loop through boundary lines
@@ -201,6 +210,7 @@ def nodeset(f,nodes):
 # Abaqus diffusion sim input file production
 #TODO add variable inputs for material properties, timepoints, 
 # and BC magnitudes
+@typechecked
 def write_abaqus_diffusion(D,S,C0,C1,touts,tstep,\
     bottomnodes,topnodes,leftnodes,rightnodes,jobname, \
     PBC=True):

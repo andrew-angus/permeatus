@@ -23,10 +23,11 @@ import subprocess
 from typing import Optional, Union, Tuple
 from typeguard import typechecked
 
+# Exported objects
+__all__ = ['layered1D']
+
 # Custom types
 ArrayLike = Union[list,np.ndarray]
-
-
 
 @typechecked
 class layered1D:
