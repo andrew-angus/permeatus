@@ -10,6 +10,12 @@ To acquire the code, clone from GitHub:
 
    $ git clone https://github.com/lwfig/permeatus.git
 
+.. note::
+
+   For now, the GitHub repository is private, and access must be requested by
+   sending an email to: l.w.figiel@warwick.ac.uk
+
+
 .. _installation:
 
 Installation
@@ -18,7 +24,8 @@ Installation
 .. role:: bash(code)
    :language: bash
 
-To use permeatus, first ensure you are in the root directory of the repository (:bash:`cd permeatus` after cloning), and install it using pip:
+To use permeatus, first ensure you are in the root directory of the 
+repository (:bash:`cd permeatus` after cloning), and install it using pip:
 
 .. code-block:: console
 

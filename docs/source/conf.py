@@ -10,13 +10,20 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-import permeatus
+#import permeatus
+#import permeatus.layered1D
+#import permeatus.homogenisation
+#import permeatus.utils
+#import os
+#import sys
+#sys.path.insert(0, os.path.abspath('../..'))
+
 
 # -- Project information -----------------------------------------------------
 
 project = 'Permeatus'
 copyright = '2024, Andrew Angus'
-author = 'Andrew Angus'
+author = 'Andrew Angus, Lukasz Figiel'
 
 # The full version, including alpha/beta/rc tags
 release = '1.0.0'
@@ -30,17 +37,20 @@ release = '1.0.0'
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
-    'sphinx.ext.autosummary',
+    #'sphinx.ext.autosummary',
     'sphinxcontrib.bibtex',
+    'autoapi.extension',
 ]
+autoapi_dirs = ['../../permeatus']
+#autosummary_generate = True
 
-autodoc_default_options = {
-    'members': True,
-}
+#autodoc_default_options = {
+#    'members': True,
+#}
 
 bibtex_bibfiles = ["Hydrogen.bib"]
 
-# Add any paths that contain templates here, relative to this directory.
+# Add any paths that contain templates here, relative this directory.
 templates_path = ['_templates']
 
 # List of patterns, relative to source directory, that match files and

@@ -32,5 +32,6 @@ Contents
 .. toctree::
 
    usage
-   api
    bibliography
+..
+   api
