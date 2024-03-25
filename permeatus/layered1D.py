@@ -99,15 +99,15 @@ class layered1D:
 
   # Init attributes
   materials: int
-  L: ArrayLike
-  D: ArrayLike
-  S: ArrayLike
-  P: ArrayLike
+  L: np.ndarray
+  D: np.ndarray
+  S: np.ndarray
+  P: np.ndarray
   C0: float
   C1: float
   p0: float
   p1: float
-  touts: ArrayLike
+  touts: np.ndarray
   tstep: float
   ncpu: int
   jobname: str
@@ -120,8 +120,6 @@ class layered1D:
   P_eff: float
   D_eff: float
   S_eff: float
-
-
 
   def __init__(self, materials: int, L: ArrayLike, 
       D: Optional[ArrayLike] = None, S: Optional[ArrayLike] = None, \

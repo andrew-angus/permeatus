@@ -1,6 +1,18 @@
 #!/bin/python3
 # Author: Andrew Angus
 
+"""Module for homogenisation of permeation in inhomogeneous systems.
+
+The main component of this module is the homogenisation class, which inherits,
+and builds on, functionality from the :mod:`permeatus.layered1D` class. 
+The parent class contains routines for running ABAQUS simulations and 
+post-processing into effective permeation coefficients. This class then 
+contains methods to construct various finite element meshes representing 
+inhomogenous permeation problems. It also contains analytical homogenisation 
+models (effective medium theories). 
+
+"""
+
 import numpy as np
 import csv
 import matplotlib.pyplot as plt
@@ -20,7 +32,6 @@ __all__ = ['homogenisation']
 # Custom types
 ArrayLike = Union[list,np.ndarray]
 
-# Homogenisation class object
 @typechecked
 class homogenisation(layered1D):
   """Class for extracting effective properties from inhomogeneous systems.
@@ -28,27 +39,29 @@ class homogenisation(layered1D):
   Attributes
   ----------
   materials
-    Number of material layers in the system.
+    Number of materials in the system.
+  vFrac
+    Volume fraction of each material
   D
-    Diffusion coefficients for each layer, 
+    Diffusion coefficients for each material, 
     with suggested units: [mm\ :sup:`2`/hr].
   S
-    Solubility coefficients for each layer, 
+    Solubility coefficients for each material, 
     with suggested units: [nmol/mm\ :sup:`3`.MPa].
   P
-    Permeability coefficients for each layer, 
+    Permeability coefficients for each material, 
     with suggested units: [nmol/mm.hr.MPa].
   C0
-    Concentration source boundary condition at first layer,
+    Concentration source boundary condition at bottom boundary,
     with suggested units: [nmol/mm\ :sup:`3`].
   C1
-    Concentration sink boundary condition at last layer, 
+    Concentration sink boundary condition at top boundary, 
     with suggested units: [nmol/mm\ :sup:`3`].
   p0
-    Pressure source boundary condition at first layer, 
+    Pressure source boundary condition at bottom boundary, 
     with suggested units: [MPa].
   p1
-    Pressure sink boundary condition at last layer, 
+    Pressure sink boundary condition at top boundary, 
     with suggested units: [MPa].
   touts
     Solution output times, if using ABAQUS,
@@ -62,6 +75,9 @@ class homogenisation(layered1D):
     Name of job, if using ABAQUS.
   verbose
     Boolean flag which switches verbose output on or off.
+  AR
+    Aspect ratios for each material, if using a model in which aspect 
+    ratio is accounted for.
   field
     Dictionary of solution data at integration points, which can contain 
     pressure, concentration, molar flux, and pressure/concentration 
@@ -80,18 +96,20 @@ class homogenisation(layered1D):
 
   # Init attributes
   materials: int
-  D: ArrayLike
-  S: ArrayLike
-  P: ArrayLike
+  vFrac: np.ndarray
+  D: np.ndarray
+  S: np.ndarray
+  P: np.ndarray
   C0: float
   C1: float
   p0: float
   p1: float
-  touts: ArrayLike
+  touts: np.ndarray
   tstep: float
   ncpu: int
   jobname: str
   verbose: bool
+  AR: np.ndarray
 
   # Derived attributes
   field: dict
@@ -99,8 +117,6 @@ class homogenisation(layered1D):
   P_eff: float
   D_eff: float
   S_eff: float
-
-
 
   def __init__(self, materials: int, vFrac: ArrayLike, 
           D: Optional[ArrayLike] = None, S: Optional[ArrayLike] = None, \
@@ -119,11 +135,14 @@ class homogenisation(layered1D):
     versa.
 
     """
+
     # Numpy array conversion
     if D is not None: D = np.array(D)  
     if S is not None: S = np.array(S)  
     if P is not None: P = np.array(P)  
     if touts is not None: touts = np.array(touts)  
+    if vFrac is not None: touts = np.array(vFrac)  
+    if AR is not None: touts = np.array(AR)  
 
     # Calculate P from DS, or vice versa
     if D is not None and S is not None:
@@ -162,6 +181,10 @@ class homogenisation(layered1D):
       raise Exception('P must be array like and same length as materials')
     if len(S) != materials:
       raise Exception('S must be array like and same length as materials')
+    if len(vFrac) != materials:
+      raise Exception('vFrac must be array like and same length as materials')
+    if AR is not None and len(AR) != materials:
+      raise Exception('AR must be array like and same length as materials')
     if tstep is not None and tstep <= 0.0:
       raise Exception('tstep must be float greater than 0')
     if ncpu < 1:
@@ -204,8 +227,7 @@ class homogenisation(layered1D):
 
 
 
-  # Mesh from Ebermann et al. paper
-  def ebberman_mesh(self,r: float, lc: float):
+  def ebberman_mesh(self,r: float, lc: float, showMesh: bool = True):
     """Create mesh from Ebermann et. al paper
 
     Create microstructure RVE mesh given in :cite:t:`ebermannAnalytical2022`.
@@ -213,10 +235,11 @@ class homogenisation(layered1D):
     Parameters
     ----------
     r
-      Particle radius
+      Particle radius, suggested units: [mm]
     lc
-      Mesh size control
-
+      Mesh size control.
+    showMesh
+      Control whether to launch Gmsh GUI and show created mesh.
 
     """
 
@@ -241,7 +264,7 @@ class homogenisation(layered1D):
     # Add circles
     c = np.array([[0.0,0.0],[boxwidth/2,boxheight/2]])
     nc = len(c)
-    #vFrac=1
+
     # Add circles with periodic wrapping
     boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxwidth, boxheight, r,eps)
     
@@ -269,16 +292,44 @@ class homogenisation(layered1D):
     write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
         bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
     
-    gmsh.fltk.run()
+    if showMesh:
+      gmsh.fltk.run()
     
     gmsh.finalize()
 
                                       
 
-  # Create microstructure mesh by random insertion or 
-  # Lubachevsky-Stillinger algorithm
-  def cross_section_mesh(self,nc,r,minSpaceFac=0.1,maxMeshFac=0.1,\
-      algorithm='LS',showmesh=True,seed=None):
+  def cross_section_mesh(self, nc: int, r: float, minSpaceFac: float = 0.1, \
+      float: maxMeshFac = 0.4, algorithm: str = 'LS', showMesh: bool = True, \
+      seed: Optional[int] = None):
+
+    """Create 2D fibre-reinforced composite perpendicular cross-section mesh
+
+    Create fibrous composite microstructure mesh as 2D perpendicular cross-section.
+    Available algorithms for microstructure creation are random insertion or
+    Lubachevsky-Stillinger :cite:p:`lubachevskyGeometric1990`.
+
+    Parameters
+    ----------
+    nc
+      Number of circles, representing fibre cross-sections.
+    r
+      Fibre radius, suggested units: [mm]
+    minSpaceFac
+      Minimum spacing between fibres, as a factor of the fibre radius, to avoid
+      meshing issues.
+    maxMeshFac
+      Maximum mesh size, as a factor of the fibre radius.
+    algorithm
+      Choose which algorithm to use, must be one of 'random' representing random
+      insertion with acceptance-rejection, or 'LS' representing Lubachevsky-Stillinger.
+    showMesh
+      Control whether to launch Gmsh GUI and show created mesh.
+    seed
+      Integer seed for random number generator, which can allow reproduction of the same
+      random mesh for testing.
+
+    """
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -495,17 +546,33 @@ class homogenisation(layered1D):
     if len(leftnodes) != len(rightnodes):
       print("Warning: left node list not equal length to right nodes; rerunning with different seed")
       self.cross_section_mesh(nc=nc,r=r,minSpaceFac=minSpaceFac,maxMeshFac=maxMeshFac,\
-      algorithm=algorithm,showmesh=showmesh)
+      algorithm=algorithm,showMesh=showMesh)
     else:
       # Write output and finalise
       write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
           bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
-      if showmesh:
+      if showMesh:
         gmsh.fltk.run()
       gmsh.finalize()
 
-  # Create mesh of Reuss bound setup
-  def reuss_mesh(self,Nx=2,Ny=80):
+
+
+  def reuss_mesh(self, Nx: int = 2, Ny: int = 80, showMesh: bool = True):
+    """Create mesh whose analytical solution is the Reuss bound.
+
+    Create a mesh of parallel material layers in the direction of flux.
+    For detail see :cite:t`auriaultHomogenization2010`.
+
+    Parameters
+    ----------
+    Nx
+      Number of cells in the x-direction.
+    Ny
+      Number of cells in the y-direction.
+    showMesh
+      Control whether to launch Gmsh GUI and show created mesh.
+
+    """
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -573,11 +640,28 @@ class homogenisation(layered1D):
     # Write output and finalise
     write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
         bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
-    gmsh.fltk.run()
+    if showMesh:
+      gmsh.fltk.run()
     gmsh.finalize()
 
-  # Create mesh of Voigt bound setup
-  def voigt_mesh(self,Nx=20,Ny=40):
+
+
+  def voigt_mesh(self, Nx: int = 20, Ny: int = 40, showMesh: bool = True):
+    """Create mesh whose analytical solution is the Voigt bound.
+
+    Create a mesh of material layers in series in the direction of flux.
+    For detail see :cite:t`auriaultHomogenization2010`.
+
+    Parameters
+    ----------
+    Nx
+      Number of cells in the x-direction.
+    Ny
+      Number of cells in the y-direction.
+    showMesh
+      Control whether to launch Gmsh GUI and show created mesh.
+
+    """
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -645,29 +729,57 @@ class homogenisation(layered1D):
     # Write output and finalise
     write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
         bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
-    gmsh.fltk.run()
+    if showMesh:
+      gmsh.fltk.run()
     gmsh.finalize()
 
-  # Get effective coefficients by numerical averaging
+
+
   def get_eff_coeffs(self):
+    """Get effective coefficients of system by numerical averaging
+
+    Get effective coefficients by numerical averaging. Simulation output at
+    integration points is averaged by weighting by the volume of the integration
+    point. The results are stored in the class attributes P_eff, D_eff, S_eff.
+
+    """
+    
     super().get_eff_coeffs(method='numerical')
 
-  # Analytical Reuss bound
+
+
   def reuss_bound(self):
+    """Calculate analytical Reuss bound
+
+    For detail see :cite:t`auriaultHomogenization2010`.
+
+    """
 
     self.P_eff = 1/np.sum(self.vFrac/self.P)
     self.D_eff = 1/np.sum(self.vFrac/self.D)
     self.S_eff = self.P_eff/self.D_eff
 
-  # Analytical Voigt bound
+
+
   def voigt_bound(self):
+    """Calculate analytical Voigt bound
+
+    For detail see :cite:t`auriaultHomogenization2010`.
+
+    """
 
     self.P_eff = np.sum(self.vFrac*self.P)
     self.S_eff = np.sum(self.vFrac*self.S)
     self.D_eff = self.P_eff/self.S_eff
 
-  # Hashin-Strikman upper bound
+
+
   def HS_upper_bound(self):
+    """Calculate analytical Hashin-Strikman upper bound
+
+    For detail see :cite:t`auriaultHomogenization2010`.
+
+    """
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -694,8 +806,14 @@ class homogenisation(layered1D):
     self.S_eff = res[2]
     self.D_eff = self.P_eff/self.S_eff
 
-  # Hashin-Strikman lower bound
+
+
   def HS_lower_bound(self):
+    """Calculate analytical Hashin-Strikman lower bound
+
+    For detail see :cite:t`auriaultHomogenization2010`.
+
+    """
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -722,8 +840,13 @@ class homogenisation(layered1D):
     self.D_eff = res[1]
     self.S_eff = self.P_eff/self.D_eff
 
-  # Get prediction of Nielsen model
   def nielsen(self):
+    """ Calculate homogenised coefficients by the Nielsen model.
+
+    This model requires setting of the AR class attribute, and assumes
+    an impermeable dispersed phase. See :cite:t`prasadModeling2021` for detail.
+
+    """
 
     # Check only 2 materials specified
     if self.materials != 2:
