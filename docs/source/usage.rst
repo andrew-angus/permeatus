@@ -33,3 +33,9 @@ repository (:bash:`cd permeatus` after cloning), and install it using pip:
 
 Basic Use
 ---------
+
+For a demonstration of how to use the software, a tutorial Jupyter notebook is available
+at :bash:`./tests/tool_test.ipynb`, with respect to the package root directory.
+
+A notebook showing some Gmsh mesh constructions is also available at :bash:`./tests/gmsh_tests.ipynb`, 
+with respect to the package root directory.

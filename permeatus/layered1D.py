@@ -15,7 +15,6 @@ plotting of solutions and extracton of effective homogenised coefficients.
 import numpy as np
 import csv
 import matplotlib.pyplot as plt
-import os
 from importlib.resources import files
 from permeatus.utils import *
 import permeatus

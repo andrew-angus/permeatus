@@ -14,16 +14,11 @@ models (effective medium theories).
 """
 
 import numpy as np
-import csv
-import matplotlib.pyplot as plt
-import os
-from importlib.resources import files
+import gmsh
 from permeatus.utils import *
 from permeatus.layered1D import *
-import permeatus
-import subprocess
 from scipy.optimize import brentq
-from typing import Optional, Union, Tuple
+from typing import Optional, Union
 from typeguard import typechecked
 
 # Exported objects
@@ -268,7 +263,7 @@ class homogenisation(layered1D):
     # Add circles with periodic wrapping
     boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxwidth, boxheight, r,eps)
     
-        # Identify physical groups for material assignment
+    # Identify physical groups for material assignment
     ents = gmsh.model.getEntities(2)
     ents.remove(boxdimtag)
     gmsh.model.addPhysicalGroup(2, [boxtag], name="material0")
@@ -300,7 +295,7 @@ class homogenisation(layered1D):
                                       
 
   def cross_section_mesh(self, nc: int, r: float, minSpaceFac: float = 0.1, \
-      float: maxMeshFac = 0.4, algorithm: str = 'LS', showMesh: bool = True, \
+      maxMeshFac: float = 0.4, algorithm: str = 'LS', showMesh: bool = True, \
       seed: Optional[int] = None):
 
     """Create 2D fibre-reinforced composite perpendicular cross-section mesh
@@ -498,7 +493,7 @@ class homogenisation(layered1D):
           newc = np.random.rand(1,2)*np.array([[boxsize,boxsize]])
 
           # For first circle just check minimum distance from edges and corners
-          if bound_proximity_check_2d(newc[0],r,eps,boxsize):
+          if bound_proximity_check_2d(newc[0],r,eps,boxsize,boxsize):
             if i == 0:
               reject = False
 
@@ -522,6 +517,7 @@ class homogenisation(layered1D):
 
     # Add circles with periodic wrapping
     boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxsize,boxsize,r,eps)
+    print(boxdimtag,boxtag)
 
     # Identify physical groups for material assignment
     ents = gmsh.model.getEntities(2)
@@ -561,7 +557,7 @@ class homogenisation(layered1D):
     """Create mesh whose analytical solution is the Reuss bound.
 
     Create a mesh of parallel material layers in the direction of flux.
-    For detail see :cite:t`auriaultHomogenization2010`.
+    For detail see :cite:t:`auriaultHomogenization2010`.
 
     Parameters
     ----------
@@ -650,7 +646,7 @@ class homogenisation(layered1D):
     """Create mesh whose analytical solution is the Voigt bound.
 
     Create a mesh of material layers in series in the direction of flux.
-    For detail see :cite:t`auriaultHomogenization2010`.
+    For detail see :cite:t:`auriaultHomogenization2010`.
 
     Parameters
     ----------
@@ -764,7 +760,7 @@ class homogenisation(layered1D):
   def voigt_bound(self):
     """Calculate analytical Voigt bound
 
-    For detail see :cite:t`auriaultHomogenization2010`.
+    For detail see :cite:t:`auriaultHomogenization2010`.
 
     """
 
@@ -777,7 +773,7 @@ class homogenisation(layered1D):
   def HS_upper_bound(self):
     """Calculate analytical Hashin-Strikman upper bound
 
-    For detail see :cite:t`auriaultHomogenization2010`.
+    For detail see :cite:t:`auriaultHomogenization2010`.
 
     """
 
@@ -811,7 +807,7 @@ class homogenisation(layered1D):
   def HS_lower_bound(self):
     """Calculate analytical Hashin-Strikman lower bound
 
-    For detail see :cite:t`auriaultHomogenization2010`.
+    For detail see :cite:t:`auriaultHomogenization2010`.
 
     """
 
@@ -844,7 +840,7 @@ class homogenisation(layered1D):
     """ Calculate homogenised coefficients by the Nielsen model.
 
     This model requires setting of the AR class attribute, and assumes
-    an impermeable dispersed phase. See :cite:t`prasadModeling2021` for detail.
+    an impermeable dispersed phase. See :cite:t:`prasadModeling2021` for detail.
 
     """
 
@@ -860,6 +856,11 @@ class homogenisation(layered1D):
 
   # Get prediction of Maxwell-Eucken model
   def maxwell_eucken(self):
+    """ Calculate homogenised coefficients by the Maxwell-Eucken model.
+
+    See :cite:t:`weiPredicting2018a` for detail.
+
+    """
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -876,6 +877,11 @@ class homogenisation(layered1D):
 
   # Get prediction of Bruggeman model
   def bruggeman(self):
+    """ Calculate homogenised coefficients by the Bruggeman model.
+
+    See :cite:t:`weiPredicting2018a` for detail.
+
+    """
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -890,6 +896,11 @@ class homogenisation(layered1D):
 
   # Get prediction of Chen model
   def chen(self):
+    """ Calculate homogenised coefficients by the Chen model.
+
+    See :cite:t:`chenHomogenization2002` for detail.
+
+    """
 
     # Check only 2 materials specified
     if self.materials != 2:
@@ -910,8 +921,12 @@ class homogenisation(layered1D):
 
   # Shuts off redundant inherited steady state method
   def steady_state(self):
+    """Obsolete inherited method; not implemented.
+    """
     raise NotImplementedError
 
   # Shuts off redundant inherited plot_1d method
   def plot_1d(self):
+    """Obsolete inherited method; not implemented.
+    """
     raise NotImplementedError
