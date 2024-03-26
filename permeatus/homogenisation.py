@@ -542,12 +542,6 @@ class homogenisation(layered1D):
     gmsh.model.mesh.generate(2)
     gmsh.model.occ.synchronize()
 
-    # Check for failed construction
-    #if len(leftnodes) != len(rightnodes):
-    #  print("Warning: left node list not equal length to right nodes; rerunning with different seed")
-    #  self.cross_section_mesh(nc=nc,r=r,minSpaceFac=minSpaceFac,maxMeshFac=maxMeshFac,\
-    #  algorithm=algorithm,showMesh=showMesh)
-    #else:
     # Write output and finalise
     self.write_abaqus_diffusion(dx=boxsize,dy=boxsize,PBC=True)
     if showMesh:
