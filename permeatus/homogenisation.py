@@ -742,7 +742,7 @@ class homogenisation(layered1D):
   def reuss_bound(self):
     """Calculate analytical Reuss bound
 
-    For detail see :cite:t`auriaultHomogenization2010`.
+    For detail see :cite:t:`auriaultHomogenization2010`.
 
     """
 
