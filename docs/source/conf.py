@@ -4,21 +4,6 @@
 # list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# -- Path setup --------------------------------------------------------------
-
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-#import permeatus
-#import permeatus.layered1D
-#import permeatus.homogenisation
-#import permeatus.utils
-#import os
-#import sys
-#sys.path.insert(0, os.path.abspath('../..'))
-
-
 # -- Project information -----------------------------------------------------
 
 project = 'Permeatus'
@@ -28,7 +13,6 @@ author = 'Andrew Angus, Lukasz Figiel'
 # The full version, including alpha/beta/rc tags
 release = '1.0.0'
 
-
 # -- General configuration ---------------------------------------------------
 
 # Add any Sphinx extension module names here, as strings. They can be
@@ -37,12 +21,14 @@ release = '1.0.0'
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
-    #'sphinx.ext.autosummary',
     'sphinxcontrib.bibtex',
     'autoapi.extension',
 ]
+
+# Tell autoapi where package is
 autoapi_dirs = ['../../permeatus']
-#autosummary_generate = True
+
+# Tell autoapi to skip class attributes
 def skippers(app, what, name, obj, skip, options):
     if what == "attribute":
        skip = True
@@ -51,10 +37,7 @@ def skippers(app, what, name, obj, skip, options):
 def setup(sphinx):
    sphinx.connect("autoapi-skip-member", skippers)
 
-#autodoc_default_options = {
-#    'members': True,
-#}
-
+# Bibliography file
 bibtex_bibfiles = ["Hydrogen.bib"]
 
 # Add any paths that contain templates here, relative this directory.
@@ -64,7 +47,6 @@ templates_path = ['_templates']
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
-
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -78,4 +60,5 @@ html_theme = 'alabaster'
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+# Custom css file
 html_css_files = ['custom.css']

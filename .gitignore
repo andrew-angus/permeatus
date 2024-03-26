@@ -23,7 +23,6 @@ __pycache__
 *.tmp
 *.csv
 *.lck
-*.pdf
 *.png
 *.pgf
 abaqus.rpt

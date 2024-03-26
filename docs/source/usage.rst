@@ -1,5 +1,5 @@
 Usage
-============
+=====
 
 Cloning Repository
 ------------------
@@ -35,7 +35,11 @@ Basic Use
 ---------
 
 For a demonstration of how to use the software, a tutorial Jupyter notebook is available
-at :bash:`./tests/tool_test.ipynb`, with respect to the package root directory.
+at :bash:`./tutorial/tutorial.ipynb`, with respect to the package root directory.
 
-A notebook showing some Gmsh mesh constructions is also available at :bash:`./tests/gmsh_tests.ipynb`, 
-with respect to the package root directory.
+Development
+-----------
+
+If it is desired to simulate a 2D system, only the mesh function must be added, in the
+style of those in the homogenisation module. The rest of the codes functionality will
+then be utilised automatically.

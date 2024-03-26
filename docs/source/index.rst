@@ -11,6 +11,8 @@ Permeation modelling tools for the Abaqus FEM software, specifically with the ap
 See :doc:`usage` section for information on basic use, including how to
 :ref:`install <installation>` the project..
 
+See :doc:`documentation` for instructions on updating and compiling documentation.
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
@@ -28,6 +30,5 @@ Contents
 .. toctree::
 
    usage
+   documentation
    bibliography
-..
-   api
