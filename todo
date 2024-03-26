@@ -1,9 +1,0 @@
-convert list arguments to numpy arrays in __init__
-argument checking
-have target directory as class input
-handling of tensorial field quantities
-pickle file interface with abaqus output - add as optional class input instead of csv
-fenicsx interface
-rotated cross sections of fibre microstructure
-3D microstructures
-interfacial modelling

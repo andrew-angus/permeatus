@@ -1,9 +1,7 @@
-abaqus_script.py
 .ipynb_checkpoints
 __pycache__
 *.egg-info
 *.log
-*.ipynb
 *.rpy*
 *.rec
 *.com
@@ -28,7 +26,6 @@ __pycache__
 *.pdf
 *.png
 *.pgf
-test.pickle
 abaqus.rpt
 *.env
 *.SMABulk
@@ -36,9 +33,6 @@ abaqus.rpt
 *.simdir
 *.simlog
 *.ipm
-*.geo
-*.msh
-*.jpg
-tests/abaqus_postscript.py
+abaqus_postscript.py
 build
-generated
+.nfs*
