@@ -413,6 +413,7 @@ class homogenisation(layered1D):
 
       # Simulate growth and collisions till circles have grown to r + eps/2
       advancing = True
+      shunting = False
       while advancing:
 
         # Get particle-particle collision times
@@ -430,13 +431,20 @@ class homogenisation(layered1D):
         time = parthits[colliders]
         
         # Check for final time
-        if t + time > tf:
+        if t + time > tf and not shunting:
 
           # Final position update
           time = tf - t 
           for i in range(nc):
             c[i] = wrap(c[i]+v[i]*time)
-          advancing = False
+
+          # Check for bounding box min distance to circle edges
+          if bound_proximity_check_2d(c=c, r=r, eps=eps, \
+              dx = boxsize, dy = boxsize):
+            advancing = False
+          else:
+            h = 0
+            shunting = True
 
         else:
           # Propagate centers of colliding particles
@@ -466,6 +474,13 @@ class homogenisation(layered1D):
         t += time
         rt += h*time
         niter += 1
+
+        # Check if succesful shunting
+        if shunting:
+          # Check for bounding box min distance to circle edges
+          if bound_proximity_check_2d(c=c, r=r, eps=eps, \
+              dx = boxsize, dy = boxsize):
+            advancing = False
 
         # Check for issue
         if niter > 10000:
@@ -899,6 +914,8 @@ class homogenisation(layered1D):
     self.D_eff = brentq(Droot,self.D[0],self.D[1])
     self.S_eff = self.P_eff/self.D_eff
 
+
+
   # Shuts off redundant inherited steady state method
   def steady_state(self):
     """Obsolete inherited method; not implemented.
@@ -910,3 +927,4 @@ class homogenisation(layered1D):
     """Obsolete inherited method; not implemented.
     """
     raise NotImplementedError
+
