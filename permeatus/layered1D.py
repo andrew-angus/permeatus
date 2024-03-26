@@ -19,6 +19,9 @@ from importlib.resources import files
 from permeatus.utils import *
 import permeatus
 import subprocess
+import gmsh
+import fileinput as fi
+from pandas import unique
 from typing import Optional, Union, Tuple
 from typeguard import typechecked
 
@@ -238,11 +241,11 @@ class layered1D:
 
     # Check for N, touts, tstep
     try:
-      N = np.array(N)
+      N = np.array(N,dtype=int)
     except:
       raise Exception('Argument N must be given as list of integers'+ \
           ' same length as number of materials')
-    if type(N) != np.ndarray or type(N[0]) != int or len(N) != self.materials:
+    if type(N) != np.ndarray or len(N) != self.materials:
       raise Exception('Argument N must be given as list of integers'+ \
           ' same length as number of materials')
     if self.touts is None:
@@ -275,7 +278,7 @@ class layered1D:
     # Identify physical groups for material assignment
     gmsh.model.occ.synchronize()
     for i in range(self.materials):
-      gmsh.model.addPhysicalGroup(2, [i], tag=i, name=f"material{i}")
+      gmsh.model.addPhysicalGroup(2, [i], tag=i+1, name=f"material{i}")
 
     # Define structured mesh with seeded edges
     eps = 1e-3*np.min(np.append(self.L,dx))
@@ -287,10 +290,10 @@ class layered1D:
       if i != self.materials:
         ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+ticker,-eps,\
           eps,eps+ticker+self.L[i],eps,1)
-        gmsh.model.mesh.setTransfiniteCurve(ents[0][1], self.N[i])
+        gmsh.model.mesh.setTransfiniteCurve(ents[0][1], N[i])
         ents = gmsh.model.getEntitiesInBoundingBox(-eps+dx,-eps+ticker,-eps,\
           eps+dx,eps+ticker+self.L[i],eps,1)
-        gmsh.model.mesh.setTransfiniteCurve(ents[0][1], self.N[i])
+        gmsh.model.mesh.setTransfiniteCurve(ents[0][1], N[i])
         gmsh.model.mesh.setTransfiniteSurface(i)
         ticker += self.L[i]
 
@@ -301,13 +304,13 @@ class layered1D:
 
 
     # Write output and finalise
-    self.write_abaqus_diffusion(PBC=False)
+    self.write_abaqus_diffusion(dx=dx,dy=dy,PBC=False)
     gmsh.fltk.run()
     gmsh.finalize()
 
 
 
-  def write_abaqus_diffusion(self,PBC: bool = True):
+  def write_abaqus_diffusion(self, dx: float, dy: float, PBC: bool = True):
     """Write Abaqus diffusion simulation input file from Gmsh/permeatus data.
 
     Gmsh has built-in capability to write nodesets and element sets to an 
@@ -319,6 +322,10 @@ class layered1D:
     Attributes
     ----------
 
+    dx
+      Bounding box x dimensions.
+    dy
+      Bounding box y dimensions.
     PBC
       Boolean flag for whether to apply periodic boundary conditions on the 
       left and right boundaries.
@@ -357,7 +364,7 @@ class layered1D:
         f.write("rwall, 11, -1. \n")
 
       # Define materials
-      for i in range(len(D)):
+      for i in range(len(self.D)):
         f.write(f'*Material, name=material{i}\n')
         f.write(f'*Diffusivity, law=FICK\n')
         f.write(f'{self.D[i]}, 0.\n')
@@ -375,7 +382,7 @@ class layered1D:
       # Diffusion step details
       maxinc = round(self.touts[-1]/self.tstep*10)
       f.write(f'*Step, name=diffusion, nlgeom=NO, inc={maxinc}\n')
-      f.write(f'*Mass Diffusion, end=PERIOD, dcmax={C0-C1}\n')
+      f.write(f'*Mass Diffusion, end=PERIOD, dcmax={self.C0-self.C1}\n')
       f.write(f'{self.tstep}, {self.touts[-1]}, {self.tstep/10}, {self.tstep*10},\n')
       f.write(f'*Boundary\n')
       f.write(f'sink, 11, 11, {self.C1}\n')
@@ -732,10 +739,8 @@ class layered1D:
           Ly[1:] += np.cumsum(self.L)
           iargsall = {}
           p = np.zeros(len(C)-self.materials+1)
-          yp = np.unique(y)
           iargsold = [0,0]
           for i,j in enumerate(Ly[1:-1]):
-            #print(y,j)
             iargs = np.argwhere(np.isclose(y,j)).flatten()#,atol=1e-14,rtol=1e-14)).flatten()
             iargsall[i] = iargs
 
@@ -751,26 +756,26 @@ class layered1D:
             iargsold = iargs
           p[iargsold[1]-(i+1):] = C[iargsold[1]:]/self.S[-1]
         else:
-          yp = y
           p = C/self.S[0]
 
 
         # Plot either concentration or pressure
-        if plotlabels is None or plotlabels[frame] is None:
-          label = f"{self.field['C'][frame]['t']:0.3f} s"
-        if target == 'C':
+        p = unique(p) 
+        yp = unique(y)
+        label = f"t = {self.field['C'][frame]['t']:0.3f}"
+        if plotTarget == 'C':
           plt.plot(y,C,label=label)
-        elif target == 'p':
+          plt.ylabel(r'C')
+        elif plotTarget == 'p':
           plt.plot(yp,p,label=label)
+          plt.ylabel(r'p')
+        else:
+          raise Exception("plotTarget must be one of 'C' or 'p'")
 
     # Finalise plotting
     plt.legend()
     plt.xlabel(r'x')
-    if target == 'C':
-      plt.ylabel(r'C')
-    else:
-      plt.ylabel(r'p')
-    if showplot:
+    if showPlot:
       plt.show()
 
 
@@ -802,10 +807,10 @@ class layered1D:
 
     x
       Spatial points of pressure solution
-    p
-      Pressure solution
     xc
       Spatial points of concentration solution
+    p
+      Pressure solution
     C
       Concentration solution
     J
@@ -879,13 +884,14 @@ class layered1D:
     # Optionally plot
     if plot:
       if plotTarget == 'C':
-        plt.plot(xc,C,'-x',label=plotlabel)
+        plt.plot(xc,C,'-x',label='steady-state')
         plt.ylabel('C')
       else:
-        plt.plot(x,p,'-x',label=plotlabel)
+        plt.plot(x,p,'-x',label='steady-state')
         plt.ylabel('p')
       plt.xlabel(r'x')
-      if showplot:
+      plt.legend()
+      if showPlot:
         plt.show()
 
     # Return results

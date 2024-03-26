@@ -18,6 +18,7 @@ import gmsh
 from permeatus.utils import *
 from permeatus.layered1D import *
 from scipy.optimize import brentq
+from fractions import Fraction
 from typing import Optional, Union
 from typeguard import typechecked
 
@@ -71,7 +72,7 @@ class homogenisation(layered1D):
   verbose
     Boolean flag which switches verbose output on or off.
   AR
-    Aspect ratios for each material, if using a model in which aspect 
+    Aspect ratio of dispersed phase, if using a model in which aspect 
     ratio is accounted for.
   field
     Dictionary of solution data at integration points, which can contain 
@@ -104,7 +105,7 @@ class homogenisation(layered1D):
   ncpu: int
   jobname: str
   verbose: bool
-  AR: np.ndarray
+  AR: float
 
   # Derived attributes
   field: dict
@@ -120,7 +121,7 @@ class homogenisation(layered1D):
           p1: Optional[float] = None, touts: Optional[ArrayLike] = None, \
           tstep: Optional[float] = None, ncpu: int = 1, 
           jobname: str = 'job', verbose: bool =True, \
-          AR: Optional[ArrayLike] = None):
+          AR: Optional[float] = None):
 
     """Initialise class with arguments.
 
@@ -136,8 +137,7 @@ class homogenisation(layered1D):
     if S is not None: S = np.array(S)  
     if P is not None: P = np.array(P)  
     if touts is not None: touts = np.array(touts)  
-    if vFrac is not None: touts = np.array(vFrac)  
-    if AR is not None: touts = np.array(AR)  
+    if vFrac is not None: vFrac = np.array(vFrac)  
 
     # Calculate P from DS, or vice versa
     if D is not None and S is not None:
@@ -178,8 +178,6 @@ class homogenisation(layered1D):
       raise Exception('S must be array like and same length as materials')
     if len(vFrac) != materials:
       raise Exception('vFrac must be array like and same length as materials')
-    if AR is not None and len(AR) != materials:
-      raise Exception('AR must be array like and same length as materials')
     if tstep is not None and tstep <= 0.0:
       raise Exception('tstep must be float greater than 0')
     if ncpu < 1:
@@ -280,7 +278,7 @@ class homogenisation(layered1D):
     gmsh.model.occ.synchronize()
     
     # Write output and finalise
-    self.write_abaqus_diffusion(PBC=True)
+    self.write_abaqus_diffusion(dx=boxwidth,dy=boxheight,PBC=True)
     
     if showMesh:
       gmsh.fltk.run()
@@ -439,8 +437,9 @@ class homogenisation(layered1D):
             c[i] = wrap(c[i]+v[i]*time)
 
           # Check for bounding box min distance to circle edges
-          if bound_proximity_check_2d(c=c, r=r, eps=eps, \
-              dx = boxsize, dy = boxsize):
+          bounds_checks = [bound_proximity_check_2d(c=i, r=r, eps=eps, \
+              dx = boxsize, dy = boxsize) for i in c]
+          if all(bounds_checks):
             advancing = False
           else:
             h = 0
@@ -478,13 +477,13 @@ class homogenisation(layered1D):
         # Check if succesful shunting
         if shunting:
           # Check for bounding box min distance to circle edges
-          if bound_proximity_check_2d(c=c, r=r, eps=eps, \
-              dx = boxsize, dy = boxsize):
+          bounds_checks = [bound_proximity_check_2d(c=i, r=r, eps=eps, \
+              dx = boxsize, dy = boxsize) for i in c]
+          if all(bounds_checks):
             advancing = False
 
         # Check for issue
         if niter > 10000:
-          print(niter,t,rt)
           raise Exception("Structure generation took too many iterations")
 
     # Random insertion algorithm
@@ -527,7 +526,6 @@ class homogenisation(layered1D):
 
     # Add circles with periodic wrapping
     boxdimtag,boxtag = periodic_disks(nc,c,gmsh.model,boxsize,boxsize,r,eps)
-    print(boxdimtag,boxtag)
 
     # Identify physical groups for material assignment
     ents = gmsh.model.getEntities(2)
@@ -545,16 +543,16 @@ class homogenisation(layered1D):
     gmsh.model.occ.synchronize()
 
     # Check for failed construction
-    if len(leftnodes) != len(rightnodes):
-      print("Warning: left node list not equal length to right nodes; rerunning with different seed")
-      self.cross_section_mesh(nc=nc,r=r,minSpaceFac=minSpaceFac,maxMeshFac=maxMeshFac,\
-      algorithm=algorithm,showMesh=showMesh)
-    else:
-      # Write output and finalise
-      self.write_abaqus_diffusion(PBC=True)
-      if showMesh:
-        gmsh.fltk.run()
-      gmsh.finalize()
+    #if len(leftnodes) != len(rightnodes):
+    #  print("Warning: left node list not equal length to right nodes; rerunning with different seed")
+    #  self.cross_section_mesh(nc=nc,r=r,minSpaceFac=minSpaceFac,maxMeshFac=maxMeshFac,\
+    #  algorithm=algorithm,showMesh=showMesh)
+    #else:
+    # Write output and finalise
+    self.write_abaqus_diffusion(dx=boxsize,dy=boxsize,PBC=True)
+    if showMesh:
+      gmsh.fltk.run()
+    gmsh.finalize()
 
 
 
@@ -601,7 +599,7 @@ class homogenisation(layered1D):
     dx = boxsize
     dy = boxsize/nlayer
     for i in range(nlayer):
-        gmsh.model.occ.addRectangle(0,i*dy,0,dx,dy,tag=i)
+      gmsh.model.occ.addRectangle(0,i*dy,0,dx,dy,tag=i)
 
     # Fragment overlappers
     out, pc = gmsh.model.occ.fragment([(2, i) for i in range(nlayer)], \
@@ -619,15 +617,15 @@ class homogenisation(layered1D):
     # Define structured mesh with seeded edges
     eps = 1e-3/nlayer
     for i in range(2):
-        ents = gmsh.model.getEntitiesInBoundingBox(-eps+i*dx,-eps,-eps,eps+i*dx,eps+boxsize,eps,1)
-        for j in ents:
-            gmsh.model.mesh.setTransfiniteCurve(j[1], Ny // nlayer + 1)
+      ents = gmsh.model.getEntitiesInBoundingBox(-eps+i*dx,-eps,-eps,eps+i*dx,eps+boxsize,eps,1)
+      for j in ents:
+        gmsh.model.mesh.setTransfiniteCurve(j[1], Ny // nlayer + 1)
     for i in range(nlayer+1):
-        ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+i*dy,-eps,eps+dx,eps+i*dy,eps,1)
-        for j in ents:
-            gmsh.model.mesh.setTransfiniteCurve(j[1], Nx + 1)
-        if i != nlayer:
-            gmsh.model.mesh.setTransfiniteSurface(i)
+      ents = gmsh.model.getEntitiesInBoundingBox(-eps,-eps+i*dy,-eps,eps+dx,eps+i*dy,eps,1)
+      for j in ents:
+        gmsh.model.mesh.setTransfiniteCurve(j[1], Nx + 1)
+      if i != nlayer:
+        gmsh.model.mesh.setTransfiniteSurface(i)
 
     # Generate mesh
     gmsh.model.mesh.generate(2)
@@ -635,7 +633,7 @@ class homogenisation(layered1D):
     gmsh.model.occ.synchronize()
 
     # Write output and finalise
-    self.write_abaqus_diffusion(PBC=True)
+    self.write_abaqus_diffusion(dx=boxsize,dy=boxsize,PBC=False)
     if showMesh:
       gmsh.fltk.run()
     gmsh.finalize()
@@ -719,7 +717,7 @@ class homogenisation(layered1D):
     gmsh.model.occ.synchronize()
 
     # Write output and finalise
-    self.write_abaqus_diffusion(PBC=True)
+    self.write_abaqus_diffusion(dx=boxsize,dy=boxsize,PBC=False)
     if showMesh:
       gmsh.fltk.run()
     gmsh.finalize()

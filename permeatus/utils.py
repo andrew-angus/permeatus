@@ -10,13 +10,13 @@ aid in mesh creation, or to set up ABAQUS permeation simulations.
 
 import numpy as np
 import gmsh
-import fileinput as fi
 from pandas import unique
+import fileinput as fi
 from typing import Optional, Tuple
 
 # Functions which are exported
 __all__ = ['boundary_nodes_2d','bound_proximity_check_2d','periodic_copy',\
-    'periodic_disks','periodic_mesh']
+    'periodic_disks','periodic_mesh','nodeset']
 
 
 
@@ -143,17 +143,17 @@ def bound_proximity_check_2d(c: np.ndarray[float], r: float, eps: float, \
 
   # Check bottom, left, top, right bounds
   leftprox = np.abs(c[0]-r) > eps
-  rightprox = np.abs(c[0]+r-boxsize) > eps
+  rightprox = np.abs(c[0]+r-dx) > eps
   bottomprox = np.abs(c[1]-r) > eps
-  topprox = np.abs(c[1]+r-boxsize) > eps
+  topprox = np.abs(c[1]+r-dy) > eps
 
   # Check corners
   bottomleftprox = np.abs(np.linalg.norm(c)-r) > eps
-  br = np.array([boxsize,0])
+  br = np.array([dx,0])
   bottomrightprox = np.abs(np.linalg.norm(c-br)-r) > eps
-  tr = np.array([boxsize,boxsize])
+  tr = np.array([dx,dy])
   toprightprox = np.abs(np.linalg.norm(c-tr)-r) > eps
-  tl = np.array([0,boxsize])
+  tl = np.array([0,dy])
   topleftprox = np.abs(np.linalg.norm(c-tl)-r) > eps
 
   # Return combined check
