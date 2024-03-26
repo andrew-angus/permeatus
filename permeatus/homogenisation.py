@@ -277,15 +277,10 @@ class homogenisation(layered1D):
     gmsh.option.setNumber("Mesh.MeshSizeMin",lc)
     gmsh.option.setNumber("Mesh.MeshSizeMax",lc)
     gmsh.model.mesh.generate(2)
-    
-    # Acquire boundary node sets
     gmsh.model.occ.synchronize()
-    bottomnodes, topnodes, leftnodes, rightnodes = \
-        boundary_nodes_2d(gmsh.model,boxwidth,boxheight)
     
     # Write output and finalise
-    write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
-        bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
+    self.write_abaqus_diffusion(PBC=True)
     
     if showMesh:
       gmsh.fltk.run()
@@ -532,11 +527,7 @@ class homogenisation(layered1D):
     gmsh.option.setNumber("Mesh.MeshSizeMin",eps)
     gmsh.option.setNumber("Mesh.MeshSizeMax",r*maxMeshFac)
     gmsh.model.mesh.generate(2)
-
-    # Acquire boundary node sets
     gmsh.model.occ.synchronize()
-    bottomnodes, topnodes, leftnodes, rightnodes = \
-        boundary_nodes_2d(gmsh.model,boxsize,boxsize)
 
     # Check for failed construction
     if len(leftnodes) != len(rightnodes):
@@ -545,8 +536,7 @@ class homogenisation(layered1D):
       algorithm=algorithm,showMesh=showMesh)
     else:
       # Write output and finalise
-      write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
-          bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
+      self.write_abaqus_diffusion(PBC=True)
       if showMesh:
         gmsh.fltk.run()
       gmsh.finalize()
@@ -627,15 +617,10 @@ class homogenisation(layered1D):
     # Generate mesh
     gmsh.model.mesh.generate(2)
     gmsh.model.mesh.recombine()
-
-    # Acquire boundary node sets
     gmsh.model.occ.synchronize()
-    bottomnodes, topnodes, leftnodes, rightnodes = \
-        boundary_nodes_2d(gmsh.model,boxsize,boxsize)
 
     # Write output and finalise
-    write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
-        bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
+    self.write_abaqus_diffusion(PBC=True)
     if showMesh:
       gmsh.fltk.run()
     gmsh.finalize()
@@ -716,15 +701,10 @@ class homogenisation(layered1D):
     # Generate mesh
     gmsh.model.mesh.generate(2)
     gmsh.model.mesh.recombine()
-
-    # Acquire boundary node sets
     gmsh.model.occ.synchronize()
-    bottomnodes, topnodes, leftnodes, rightnodes = \
-        boundary_nodes_2d(gmsh.model,boxsize,boxsize)
 
     # Write output and finalise
-    write_abaqus_diffusion(self.D,self.S,self.C0,self.C1,self.touts,self.tstep,\
-        bottomnodes,topnodes,leftnodes,rightnodes,self.jobname,PBC=True)
+    self.write_abaqus_diffusion(PBC=True)
     if showMesh:
       gmsh.fltk.run()
     gmsh.finalize()

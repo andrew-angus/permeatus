@@ -16,7 +16,7 @@ from typing import Optional, Tuple
 
 # Functions which are exported
 __all__ = ['boundary_nodes_2d','bound_proximity_check_2d','periodic_copy',\
-    'periodic_disks','periodic_mesh','write_abaqus_diffusion']
+    'periodic_disks','periodic_mesh']
 
 
 
@@ -287,6 +287,8 @@ def periodic_disks(nc: int, c: np.ndarray[float], m: gmsh.model, dx: float, \
 
   return boxdimtag,boxtag
 
+
+
 def periodic_mesh(m,dx,eps):
   """Enforce periodic mesh on x-bounds
 
@@ -334,6 +336,8 @@ def periodic_mesh(m,dx,eps):
             m.mesh.setPeriodic(1, [j[1]], [l[1]], \
                 [1, 0, 0, -dx, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
 
+
+
 def nodeset(f: fi.input, nodes: np.ndarray[int]):
   """Function to write node sets in Abaqus input file
 
@@ -357,65 +361,3 @@ def nodeset(f: fi.input, nodes: np.ndarray[int]):
       f.write(f'{j}, ')
       ticker += 1
 
-# Abaqus diffusion sim input file production
-def write_abaqus_diffusion(D,S,C0,C1,touts,tstep,\
-    bottomnodes,topnodes,leftnodes,rightnodes,jobname, \
-    PBC=True):
-
-  # Replace element types with diffusion
-  fname = f'{jobname}.inp'
-  gmsh.write(fname)
-  with fi.input(fname,inplace=True) as f:
-    for line in f:
-      print(line.replace("CPS","DC2D"), end='')
-
-  # Append BC's, Diffusion step details, Material properties and section assignment
-  with open(fname,"a") as f:
-    # Define boundary node sets
-    f.write('*NSET, NSET=source \n')
-    nodeset(f,bottomnodes)
-    f.write('*NSET, NSET=sink \n')
-    nodeset(f,topnodes)
-    if PBC:
-      f.write('*NSET, NSET=lwall, UNSORTED \n')
-      nodeset(f,leftnodes)
-      f.write('*NSET, NSET=rwall, UNSORTED \n')
-      nodeset(f,rightnodes)
-
-    # Periodic concentration for left and right walls
-    if PBC:
-      f.write('*Equation \n')
-      f.write('2 \n')
-      f.write("lwall, 11, 1. \n")
-      f.write("rwall, 11, -1. \n")
-
-    # Define materials
-    for i in range(len(D)):
-      f.write(f'*Material, name=material{i}\n')
-      f.write(f'*Diffusivity, law=FICK\n')
-      f.write(f'{D[i]}, 0.\n')
-      f.write(f'*Solubility\n')
-      f.write(f'{S[i]},\n')
-      f.write(f'*Solid Section, elset=material{i}, material=material{i}\n')
-
-    # Time points
-    f.write(f'*Time Points, name=timepoints\n')
-    nodeset(f,touts)
-
-    # Zero temperature
-    f.write(f'*Physical Constants, absolute zero=0.\n')
-
-    # Diffusion step details
-    maxinc = round(touts[-1]/tstep*10)
-    f.write(f'*Step, name=diffusion, nlgeom=NO, inc={maxinc}\n')
-    f.write(f'*Mass Diffusion, end=PERIOD, dcmax={C0-C1}\n')
-    f.write(f'{tstep}, {touts[-1]}, {tstep/10}, {tstep*10},\n')
-    f.write(f'*Boundary\n')
-    f.write(f'sink, 11, 11, {C1}\n')
-    f.write(f'*Boundary\n')
-    f.write(f'source, 11, 11, {C0}\n')
-    f.write(f'*Restart, write, frequency=0\n')
-    f.write(f'*Output, field, time points=timepoints\n')
-    f.write(f'*Element Output, directions=YES\n')
-    f.write(f'CONC, MFL, IVOL\n')
-    f.write(f'*End Step\n')
